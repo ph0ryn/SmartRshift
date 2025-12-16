@@ -7,7 +7,7 @@
     "lint": "bunx oxlint --type-aware",
     "format": "bunx oxlint --type-aware --fix . ; bunx oxfmt . ; bunx eslint --fix .",
     "check": "bunx tsc --noEmit",
-    "build": "bun run build.ts"
+    "build": "bun run format ; bun run build.ts"
   },
   "devDependencies": {
     "@stylistic/eslint-plugin": "^5.6.1",

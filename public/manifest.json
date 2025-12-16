@@ -11,16 +11,15 @@
         "type": "module"
     },
     "permissions": [
-        "storage",
-        "activeTab"
+        "storage"
     ],
     "host_permissions": [
-        "<all_urls>"
+        "https://*.rshift.jp/*"
     ],
     "content_scripts": [
         {
             "matches": [
-                "<all_urls>"
+                "https://*.rshift.jp/*"
             ],
             "js": [
                 "content.js"
