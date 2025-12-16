@@ -19,34 +19,102 @@ function init() {
     cachedActivePresetId = items.activePresetId || "";
 
     // 旧データ互換
+    // キャッシュの初期化（読み取りのみ）
     if (!cachedPresets.length && items.shiftPreset) {
       cachedPresets = [items.shiftPreset];
     }
 
+    injectStyles();
     injectButtons();
     injectDayButtons();
   });
+}
 
-  // 動的なDOM変更を監視
-  const observer = new MutationObserver((mutations) => {
-    let shouldInject = false;
+function injectStyles() {
+  const style = document.createElement("style");
 
-    mutations.forEach((mutation) => {
-      if (mutation.addedNodes.length > 0) {
-        shouldInject = true;
-      }
-    });
-
-    if (shouldInject) {
-      injectButtons();
-      injectDayButtons();
+  style.textContent = `
+    .smartshift-btn, .smartshift-holiday-btn {
+      align-items: center;
+      border: 1px solid rgba(0,0,0,0.1);
+      border-radius: 50%;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      cursor: pointer;
+      display: flex;
+      font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+      font-size: 14px;
+      height: 24px;
+      justify-content: center;
+      line-height: 1;
+      padding: 0;
+      position: absolute;
+      right: 2px;
+      transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+      width: 24px;
+      z-index: 9999;
     }
-  });
 
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-  });
+    .smartshift-btn {
+      background: linear-gradient(135deg, #fff176 0%, #fdd835 100%);
+      top: 2px;
+    }
+
+    .smartshift-holiday-btn {
+      background: linear-gradient(135deg, #e0f7fa 0%, #b2ebf2 100%);
+      top: 30px;
+    }
+
+    .smartshift-day-btn-group {
+      display: flex;
+      gap: 6px;
+      justify-content: center;
+      left: 0;
+      pointer-events: none; /* コンテナ自体はクリックを阻害しない */
+      position: absolute;
+      top: -45px;
+      width: 100%;
+      z-index: 10000;
+    }
+
+    .smartshift-day-btn {
+      align-items: center;
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.1);
+      border-radius: 6px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+      cursor: pointer;
+      display: flex;
+      font-size: 14px;
+      height: 28px;
+      justify-content: center;
+      padding: 0;
+      pointer-events: auto;
+      transition: all 0.2s ease;
+      width: 32px;
+    }
+
+    .smartshift-day-btn.preset {
+      background: linear-gradient(135deg, #fff59d 0%, #fbc02d 100%);
+    }
+
+    .smartshift-day-btn.holiday {
+      background: linear-gradient(135deg, #b2ebf2 0%, #4dd0e1 100%);
+    }
+
+    /* Hover Effects */
+    .smartshift-btn:hover, .smartshift-holiday-btn:hover, .smartshift-day-btn:hover {
+      box-shadow: 0 4px 8px rgba(0,0,0,0.25);
+      filter: brightness(1.05);
+      transform: translateY(-1px) scale(1.05);
+    }
+
+    .smartshift-btn:active, .smartshift-holiday-btn:active, .smartshift-day-btn:active {
+      box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+      transform: translateY(1px) scale(0.95);
+    }
+  `;
+
+  document.head.appendChild(style);
 }
 
 function injectButtons() {
@@ -55,7 +123,6 @@ function injectButtons() {
   shifts.forEach((shift, index) => {
     const el = shift as HTMLElement;
 
-    // 既にボタンがある場合はスキップ
     if (el.querySelector(".smartshift-btn")) {
       return;
     }
@@ -72,7 +139,6 @@ function injectButtons() {
       el.style.position = "relative";
     }
 
-    // データ属性でindexを持たせておく
     el.dataset.smartshiftIndex = index.toString();
 
     // シフト追加/変更ボタン (⚡️)
@@ -80,24 +146,7 @@ function injectButtons() {
 
     btn.className = "smartshift-btn";
     btn.textContent = "⚡️";
-
-    Object.assign(btn.style, {
-      background: "#ffeb3b",
-      border: "1px solid #999",
-      borderRadius: "50%",
-      boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-      cursor: "pointer",
-      fontSize: "14px",
-      height: "24px",
-      lineHeight: "22px",
-      padding: "0",
-      position: "absolute",
-      right: "2px",
-      textAlign: "center",
-      top: "2px",
-      width: "24px",
-      zIndex: "9999",
-    });
+    // Inline styles removed
 
     btn.onclick = (e) => {
       e.stopPropagation();
@@ -112,24 +161,7 @@ function injectButtons() {
 
     holidayBtn.className = "smartshift-holiday-btn";
     holidayBtn.textContent = "🏖️";
-
-    Object.assign(holidayBtn.style, {
-      background: "#e0f7fa",
-      border: "1px solid #999",
-      borderRadius: "50%",
-      boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-      cursor: "pointer",
-      fontSize: "14px",
-      height: "24px",
-      lineHeight: "22px",
-      padding: "0",
-      position: "absolute",
-      right: "2px",
-      textAlign: "center",
-      top: "28px", // ⚡️ボタンの下
-      width: "24px",
-      zIndex: "9999",
-    });
+    // Inline styles removed
 
     holidayBtn.onclick = (e) => {
       e.stopPropagation();
@@ -176,32 +208,14 @@ function injectDayButtons() {
     const container = document.createElement("div");
 
     container.className = "smartshift-day-btn-group";
-
-    Object.assign(container.style, {
-      left: "0",
-      position: "absolute",
-      textAlign: "center",
-      top: "-45px", // Adjust based on cell height/padding
-      width: "100%",
-      zIndex: "10000",
-    });
+    // Inline styles removed (handled by CSS)
 
     const btnPreset = document.createElement("button");
 
+    btnPreset.className = "smartshift-day-btn preset";
     btnPreset.textContent = "⚡️";
     btnPreset.title = "この曜日に一括適用";
-
-    Object.assign(btnPreset.style, {
-      background: "#ffeb3b",
-      border: "1px solid #ccc",
-      borderRadius: "4px",
-      cursor: "pointer",
-      fontSize: "12px",
-      height: "24px",
-      marginRight: "4px",
-      padding: 0,
-      width: "24px",
-    });
+    // Inline styles removed
 
     btnPreset.onclick = async (e) => {
       e.stopPropagation();
