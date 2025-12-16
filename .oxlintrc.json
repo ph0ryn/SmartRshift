@@ -12,7 +12,7 @@
     "nursery": "warn"
   },
   "env": {
-    "node": true
+    "browser": true
   },
   "globals": {
     "Bun": "readonly"
