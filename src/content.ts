@@ -443,7 +443,7 @@ async function handleHolidayApply(shiftElement: HTMLElement, isAuto = false): Pr
     const preset = { shiftType: "HOLIDAY" };
     const applyBtn = shiftElement.querySelector(
       'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
-    );
+    ) as HTMLElement;
 
     if (!applyBtn) {
       console.warn("Shift application button not found for holiday, skipping.");
@@ -452,8 +452,9 @@ async function handleHolidayApply(shiftElement: HTMLElement, isAuto = false): Pr
       return;
     }
 
-    (applyBtn as HTMLElement).click();
-    waitForModalAndApply(preset).then(resolve).catch(reject);
+    console.warn("[SmartShift] Clicking holiday apply button...");
+    applyBtn.click();
+    waitForModalAndApply(preset, applyBtn).then(resolve).catch(reject);
   });
 }
 
