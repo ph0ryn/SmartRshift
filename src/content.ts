@@ -51,7 +51,7 @@ function injectStyles() {
       right: 2px;
       transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
       width: 24px;
-      z-index: 9999;
+      z-index: 100;
     }
 
     .smartshift-btn {
@@ -73,7 +73,7 @@ function injectStyles() {
       position: absolute;
       top: -45px;
       width: 100%;
-      z-index: 10000;
+      z-index: 101;
     }
 
     .smartshift-day-btn {
