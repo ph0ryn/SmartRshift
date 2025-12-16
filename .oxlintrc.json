@@ -15,7 +15,9 @@
     "browser": true
   },
   "globals": {
-    "Bun": "readonly"
+    "Bun": "readonly",
+    "chrome": "readonly",
+    "process": "readonly"
   },
   "ignorePatterns": [
     "dist/**",
