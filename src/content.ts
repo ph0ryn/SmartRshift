@@ -57,6 +57,7 @@ function injectButtons() {
       shift.style.position = "relative";
     }
 
+    // シフト追加/変更ボタン (⚡️)
     const btn = document.createElement("button");
 
     btn.className = "smartshift-btn";
@@ -88,10 +89,62 @@ function injectButtons() {
     });
 
     shift.appendChild(btn);
+
+    // 希望休ボタン (🏖️)
+    const holidayBtn = document.createElement("button");
+
+    holidayBtn.className = "smartshift-holiday-btn";
+    holidayBtn.textContent = "🏖️";
+
+    holidayBtn.style.cssText = `
+      position: absolute;
+      top: 28px; /* ⚡️ボタンの下 */
+      right: 2px;
+      z-index: 9999;
+      background: #e0f7fa;
+      border: 1px solid #999;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 14px;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      line-height: 22px;
+      text-align: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    `;
+
+    holidayBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      handleHolidayApply(shift);
+    });
+
+    shift.appendChild(holidayBtn);
   });
 }
 
 declare const chrome: any;
+
+function handleHolidayApply(shiftElement: Element) {
+  const preset = {
+    shiftType: "HOLIDAY",
+  };
+
+  const applyBtn = shiftElement.querySelector(
+    'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
+  );
+
+  if (!applyBtn) {
+    console.error("Shift application button not found in cell.");
+    alert("申請ボタンが見つかりませんでした。");
+
+    return;
+  }
+
+  (applyBtn as HTMLElement).click();
+  waitForModalAndApply(preset);
+}
 
 // シフト適用のメインロジック
 function handleShiftApply(shiftElement: Element) {
@@ -149,17 +202,15 @@ function waitForModalAndApply(preset: any) {
   const modal = document.getElementById("popup");
 
   if (!modal) {
-    // まだDOMにない場合は少し待つ
+    // まだモーダルDOMがない場合は少し待って再試行
     setTimeout(() => waitForModalAndApply(preset), 100);
 
     return;
   }
 
-  // モーダルが表示されているか確認（jQueryのmodal('show')などはdisplay:blockにするはず）
-  // 完全に表示されるまで待つ（アニメーション考慮）
+  // モーダルが表示(display: block や opacity, class="in"等)されるのを監視
   const checkVisible = setInterval(() => {
     if (modal.style.display !== "none" && modal.classList.contains("in")) {
-      // Bootstrap modal usually has 'in' class when visible
       clearInterval(checkVisible);
       applyValuesToModal(modal, preset);
     } else {
@@ -171,39 +222,72 @@ function waitForModalAndApply(preset: any) {
     }
   }, 100);
 
-  // タイムアウト設定（5秒）
+  // 安全策: 5秒経っても開かなければ諦める
   setTimeout(() => clearInterval(checkVisible), 5000);
 }
 
 function applyValuesToModal(modal: HTMLElement, preset: any) {
-  // 3. 値をセット
   const setSelect = (id: string, value: string) => {
     const el = modal.querySelector(`#${id}`) as HTMLSelectElement;
 
     if (el) {
       el.value = value;
-      el.dispatchEvent(new Event("change")); // イベント発火
+      el.dispatchEvent(new Event("change"));
     }
   };
 
-  setSelect("popup_from_hour", preset.startHour);
-  setSelect("popup_from_minutes", preset.startMinute);
-  setSelect("popup_to_hour", preset.endHour);
-  setSelect("popup_to_minutes", preset.endMinute);
+  if (preset.shiftType === "HOLIDAY") {
+    // 希望休のラジオボタンを探す
+    // label要素のテキストに「希望休」が含まれているものを探す
+    const labels = Array.from(modal.querySelectorAll("label"));
+    const holidayLabel = labels.find((l) => l.innerText.includes("希望休"));
 
-  // シフトタイプ（出勤など）
-  const typeRadio = modal.querySelector(
-    `input[name="popup_shift_type"][value="${preset.shiftType}"]`,
-  ) as HTMLInputElement;
+    if (holidayLabel) {
+      const radioId = holidayLabel.getAttribute("for");
+      let radio: HTMLInputElement | null = null;
 
-  if (typeRadio) {
-    typeRadio.checked = true;
-    typeRadio.dispatchEvent(new Event("change"));
+      if (radioId) {
+        radio = modal.querySelector(`#${radioId}`) as HTMLInputElement;
+      } else {
+        // labelの中にinputがあるパターン
+        radio = holidayLabel.querySelector("input[type='radio']");
+      }
+
+      if (radio) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event("change"));
+      } else {
+        console.error("Holiday radio button not found.");
+        alert("希望休の選択肢が見つかりませんでした。");
+
+        return;
+      }
+    } else {
+      console.error("Holiday label not found.");
+      alert("「希望休」の項目が見つかりませんでした。");
+
+      return;
+    }
+  } else {
+    // 通常シフト適用
+    setSelect("popup_from_hour", preset.startHour);
+    setSelect("popup_from_minutes", preset.startMinute);
+    setSelect("popup_to_hour", preset.endHour);
+    setSelect("popup_to_minutes", preset.endMinute);
+
+    // シフトタイプ（現状は "1" = 出勤 固定）
+    // もしラジオボタンなら
+    const typeRadio = modal.querySelector(
+      `input[name="popup_shift_type"][value="${preset.shiftType}"]`,
+    ) as HTMLInputElement;
+
+    if (typeRadio) {
+      typeRadio.checked = true;
+      typeRadio.dispatchEvent(new Event("change"));
+    }
   }
 
-  // 4. 保存ボタンを押す
-  // 少しだけユーザーに「入力された」感を見せるか、即座に押すか。
-  // 即座だと早すぎて不安になるかもしれないが、ツールなので効率優先で即座に。
+  // 少し待ってから登録(変更)ボタンを押す(React/Vueなどイベント伝播待ち考慮)
   setTimeout(() => {
     const submitBtn = modal.querySelector("#pupup_change") as HTMLElement;
 
@@ -212,5 +296,5 @@ function applyValuesToModal(modal: HTMLElement, preset: any) {
     } else {
       console.error("Submit button not found");
     }
-  }, 100); // わずかな遅延でJSの処理時間を確保
+  }, 100);
 }
