@@ -289,25 +289,22 @@ function injectDayButtons() {
 
     btnPreset.onclick = (e) => {
       e.stopPropagation();
+      e.preventDefault();
 
-      if (
-        !confirm(
-          `【出勤】\n${group.elements.length}件のシフトを一括適用しますか？\n※ページのリロードを伴います`,
-        )
-      ) {
-        return;
-      }
+      showCustomConfirm(
+        `【出勤】\n${group.elements.length}件のシフトを一括適用しますか？\n※ページのリロードを伴います`,
+        () => {
+          const jobs: Job[] = [];
 
-      const jobs: Job[] = [];
+          group.elements.forEach((el, i) => {
+            if (el.querySelector(".smartshift-btn")) {
+              jobs.push({ index: group.indices[i], type: "PRESET" });
+            }
+          });
 
-      group.elements.forEach((el, i) => {
-        // ⚡️ボタンがあるセルのみを対象とする
-        if (el.querySelector(".smartshift-btn")) {
-          jobs.push({ index: group.indices[i], type: "PRESET" });
-        }
-      });
-
-      enqueueJobs(jobs);
+          enqueueJobs(jobs);
+        },
+      );
     };
 
     // 希望休一括ボタン (🏖️)
@@ -329,25 +326,22 @@ function injectDayButtons() {
 
     btnHoliday.onclick = (e) => {
       e.stopPropagation();
+      e.preventDefault();
 
-      if (
-        !confirm(
-          `【希望休】\n${group.elements.length}件を一括申請しますか？\n※ページのリロードを伴います`,
-        )
-      ) {
-        return;
-      }
+      showCustomConfirm(
+        `【希望休】\n${group.elements.length}件を一括申請しますか？\n※ページのリロードを伴います`,
+        () => {
+          const jobs: Job[] = [];
 
-      const jobs: Job[] = [];
+          group.elements.forEach((el, i) => {
+            if (el.querySelector(".smartshift-btn")) {
+              jobs.push({ index: group.indices[i], type: "HOLIDAY" });
+            }
+          });
 
-      group.elements.forEach((el, i) => {
-        // ⚡️ボタンがあるセルのみを対象とする
-        if (el.querySelector(".smartshift-btn")) {
-          jobs.push({ index: group.indices[i], type: "HOLIDAY" });
-        }
-      });
-
-      enqueueJobs(jobs);
+          enqueueJobs(jobs);
+        },
+      );
     };
 
     container.appendChild(btnPreset);
@@ -356,12 +350,106 @@ function injectDayButtons() {
   });
 }
 
+function showCustomConfirm(message: string, onConfirm: () => void) {
+  // 既存のダイアログがあれば削除
+  const existing = document.getElementById("smartshift-confirm-dialog");
+
+  if (existing) {
+    existing.remove();
+  }
+
+  const overlay = document.createElement("div");
+
+  overlay.id = "smartshift-confirm-dialog";
+
+  Object.assign(overlay.style, {
+    alignItems: "center",
+    background: "rgba(0, 0, 0, 0.5)",
+    display: "flex",
+    height: "100%",
+    justifyContent: "center",
+    left: "0",
+    position: "fixed",
+    top: "0",
+    width: "100%",
+    zIndex: "999999",
+  });
+
+  // クリックで背景で閉じないようにする（誤操作防止）
+  overlay.onclick = (e) => e.stopPropagation();
+
+  const dialog = document.createElement("div");
+
+  Object.assign(dialog.style, {
+    background: "white",
+    borderRadius: "8px",
+    boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+    maxWidth: "400px",
+    padding: "20px",
+    textAlign: "center",
+    whiteSpace: "pre-wrap", // 改行コード反映
+  });
+
+  const msgEl = document.createElement("p");
+
+  msgEl.textContent = message;
+  msgEl.style.marginBottom = "20px";
+  msgEl.style.fontSize = "16px";
+  msgEl.style.fontWeight = "bold";
+
+  const btnGroup = document.createElement("div");
+
+  btnGroup.style.display = "flex";
+  btnGroup.style.justifyContent = "center";
+  btnGroup.style.gap = "10px";
+
+  const cancelBtn = document.createElement("button");
+
+  cancelBtn.textContent = "いいえ";
+
+  Object.assign(cancelBtn.style, {
+    background: "#f3f4f6",
+    border: "1px solid #ccc",
+    borderRadius: "4px",
+    cursor: "pointer",
+    padding: "8px 16px",
+  });
+
+  cancelBtn.onclick = () => overlay.remove();
+
+  const okBtn = document.createElement("button");
+
+  okBtn.textContent = "はい（実行）";
+
+  Object.assign(okBtn.style, {
+    background: "#2563eb",
+    border: "none",
+    borderRadius: "4px",
+    color: "white",
+    cursor: "pointer",
+    fontWeight: "bold",
+    padding: "8px 16px",
+  });
+
+  okBtn.onclick = () => {
+    overlay.remove();
+    onConfirm();
+  };
+
+  btnGroup.appendChild(cancelBtn);
+  btnGroup.appendChild(okBtn);
+
+  dialog.appendChild(msgEl);
+  dialog.appendChild(btnGroup);
+  overlay.appendChild(dialog);
+
+  document.body.appendChild(overlay);
+}
+
 // 個別シフト適用（Promise版）
 async function handleShiftApply(shiftElement: HTMLElement, isAuto = false): Promise<void> {
   return new Promise((resolve, reject) => {
     chrome.storage.local.get(["presets", "activePresetId", "shiftPreset"], (items: any) => {
-      let preset: any = null;
-
       if (items.presets && items.activePresetId) {
         preset = items.presets.find((p: any) => p.id === items.activePresetId);
       } else if (items.shiftPreset) {
@@ -465,13 +553,19 @@ function waitForModalAndApply(preset: any): Promise<void> {
 }
 
 function applyValuesToModal(modal: HTMLElement, preset: any) {
-  const setSelect = (id: string, value: string) => {
+  const setSelect = (id: string, value: string): boolean => {
     const el = modal.querySelector(`#${id}`) as HTMLSelectElement;
 
     if (el) {
       el.value = value;
       el.dispatchEvent(new Event("change"));
+
+      return true;
     }
+
+    console.warn(`Element #${id} not found.`);
+
+    return false;
   };
 
   if (preset.shiftType === "HOLIDAY") {
@@ -523,24 +617,32 @@ function applyValuesToModal(modal: HTMLElement, preset: any) {
     if (!found) {
       console.error("Holiday element not found.");
 
-      // 自動実行中はアラートを出さないほうが良いかもしれないが、エラーログは出す
-      if (document.hidden) {
-        // 簡易判定: バックグラウンド実行ならアラート出さない
-        console.error("Failed to find holiday option in background");
-      } else {
-        alert(
-          `「希望休」などの項目が自動検出できませんでした。\n検証キーワード: ${keywords.join(", ")}`,
-        );
+      if (!document.hidden) {
+        alert(`「希望休」の項目が見つかりませんでした。\n画面上の項目名を確認してください。`);
       }
 
-      return;
+      throw new Error("Holiday element not found");
     }
   } else {
     // 通常シフト適用
-    setSelect("popup_from_hour", preset.startHour);
-    setSelect("popup_from_minutes", preset.startMinute);
-    setSelect("popup_to_hour", preset.endHour);
-    setSelect("popup_to_minutes", preset.endMinute);
+    // 必須項目のチェック
+    const r1 = setSelect("popup_from_hour", preset.startHour);
+    const r2 = setSelect("popup_from_minutes", preset.startMinute);
+    const r3 = setSelect("popup_to_hour", preset.endHour);
+    const r4 = setSelect("popup_to_minutes", preset.endMinute);
+
+    if (!r1 || !r2 || !r3 || !r4) {
+      const msg =
+        "シフト時間の入力欄が見つかりませんでした。\nサイトの仕様が変更された可能性があります。";
+
+      console.error(msg);
+
+      if (!document.hidden) {
+        alert(msg);
+      }
+
+      throw new Error("Time input elements not found");
+    }
 
     // シフトタイプ（現状は "1" = 出勤 固定）
     const typeRadio = modal.querySelector(
@@ -562,6 +664,7 @@ function applyValuesToModal(modal: HTMLElement, preset: any) {
       submitBtn.click();
     } else {
       console.error("Submit button not found");
+      alert("登録ボタン(#pupup_change)が見つかりませんでした。");
     }
   }, 500); // 500msのウェイト（前は100ms）
 }
