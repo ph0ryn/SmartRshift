@@ -95,40 +95,54 @@ declare const chrome: any;
 
 // シフト適用のメインロジック
 function handleShiftApply(shiftElement: Element) {
-  // Storageからプリセットを取得
-  chrome.storage.local.get(
-    {
-      shiftPreset: {
+  // Storageからプリセット一覧とアクティブIDを取得
+  chrome.storage.local.get(["presets", "activePresetId", "shiftPreset"], (items: any) => {
+    let preset: any = null;
+
+    // 新データ構造のチェック
+    if (items.presets && items.activePresetId) {
+      preset = items.presets.find((p: any) => p.id === items.activePresetId);
+    }
+    // フォールバック: 旧データまたはデフォルト
+    else if (items.shiftPreset) {
+      preset = items.shiftPreset;
+    }
+    // 完全なデフォルト
+    else {
+      preset = {
         endHour: "18",
         endMinute: "00",
         shiftType: "1",
         startHour: "09",
-        startMinute: "00", // 1: 出勤
-      },
-    },
-    (items: any) => {
-      const preset = items.shiftPreset;
+        startMinute: "00",
+      };
+    }
 
-      // 1. 既存の申請ボタンを探してクリック
-      // ボタンは shiftElement 内にあるはずだが、構造が変わっている可能性もあるので注意深く探す
-      // 直下の .staffpage-plan-list-shift-day > button ではなく、shift内容を表示しているボタン(id付き)を探す
-      const applyBtn = shiftElement.querySelector(
-        'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
-      );
+    if (!preset) {
+      alert("プリセットが見つかりません。Popupから設定を追加して選択してください。");
 
-      if (!applyBtn) {
-        console.error("Shift application button not found in cell.");
-        alert("申請ボタンが見つかりませんでした。");
+      return;
+    }
 
-        return;
-      }
+    // 1. 既存の申請ボタンを探してクリック
+    // ボタンは shiftElement 内にあるはずだが、構造が変わっている可能性もあるので注意深く探す
+    // 直下の .staffpage-plan-list-shift-day > button ではなく、shift内容を表示しているボタン(id付き)を探す
+    const applyBtn = shiftElement.querySelector(
+      'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
+    );
 
-      (applyBtn as HTMLElement).click();
+    if (!applyBtn) {
+      console.error("Shift application button not found in cell.");
+      alert("申請ボタンが見つかりませんでした。");
 
-      // 2. モーダルが開くのを待機して値をセット
-      waitForModalAndApply(preset);
-    },
-  );
+      return;
+    }
+
+    (applyBtn as HTMLElement).click();
+
+    // 2. モーダルが開くのを待機して値をセット
+    waitForModalAndApply(preset);
+  });
 }
 
 function waitForModalAndApply(preset: any) {
