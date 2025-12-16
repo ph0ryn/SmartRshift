@@ -64,7 +64,7 @@ function injectButtons() {
       'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
     ) as HTMLButtonElement | null;
 
-    if (!applyBtn) {
+    if (!applyBtn || applyBtn.disabled) {
       return;
     }
 
@@ -219,14 +219,14 @@ function injectDayButtons() {
       ) as HTMLElement[];
       const targetCells = currentCells.filter((cell) => {
         const rect = cell.getBoundingClientRect();
-        const pageLeft = rect.left + window.scrollX;
-
         // ボタンの左位置(group.left)と近いものを同じ列とみなす
-        // group.leftはページ座標ではないため、pageLeftと比較するには補正が必要だが、
-        // ここではgroup作成時のlogicを再利用する方が安全
-        // group作成時は: const left = Math.round(rect.left);
-        // なので、現在のrect.leftと比較する
-        return Math.abs(Math.round(rect.left) - group.left) < 10;
+        // かつ、申請ボタンが有効なもののみ対象とする
+        const applyBtn = cell.querySelector(
+          'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
+        ) as HTMLButtonElement;
+        const isEnabled = applyBtn && !applyBtn.disabled;
+
+        return isEnabled && Math.abs(Math.round(rect.left) - group.left) < 10;
       });
 
       showCustomConfirm(
