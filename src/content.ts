@@ -208,7 +208,7 @@ function injectDayButtons() {
       width: "24px",
     });
 
-    btnPreset.onclick = (e) => {
+    btnPreset.onclick = async (e) => {
       e.stopPropagation();
       e.preventDefault();
       console.warn("[SmartShift] ⬇️ Clicked at", new Date().toISOString());
@@ -229,33 +229,28 @@ function injectDayButtons() {
         return isEnabled && Math.abs(Math.round(rect.left) - group.left) < 10;
       });
 
-      showCustomConfirm(
-        `【出勤】\n${targetCells.length}件のシフトを一括適用しますか？`,
-        async () => {
-          console.warn("[SmartShift] Confirm OK processing started at", new Date().toISOString());
-          let count = 0;
+      console.warn("[SmartShift] Bulk Apply processing started at", new Date().toISOString());
+      let count = 0;
 
-          // 上から順に処理
-          targetCells.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+      // 上から順に処理
+      targetCells.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
 
-          for (const el of targetCells) {
-            // ⚡️ボタンがあるセルのみを対象とする
-            // (再検索してもクラス名は変わらない前提)
-            if (el.querySelector(".smartshift-btn")) {
-              try {
-                console.warn(`[SmartShift] Processing item ${count + 1} start`);
-                await handleShiftApply(el, true);
-                count++;
-              } catch (e) {
-                console.error("Apply failed for cell", e);
-              }
-            }
+      for (const el of targetCells) {
+        // ⚡️ボタンがあるセルのみを対象とする
+        // (再検索してもクラス名は変わらない前提)
+        if (el.querySelector(".smartshift-btn")) {
+          try {
+            console.warn(`[SmartShift] Processing item ${count + 1} start`);
+            await handleShiftApply(el, true);
+            count++;
+          } catch (e) {
+            console.error("Apply failed for cell", e);
           }
+        }
+      }
 
-          console.warn("[SmartShift] All items processed at", new Date().toISOString());
-          alert(`${count}件の処理が完了しました`);
-        },
-      );
+      console.warn("[SmartShift] All items processed at", new Date().toISOString());
+      alert(`${count}件の処理が完了しました`);
     };
 
     const btnHoliday = document.createElement("button");
@@ -274,139 +269,55 @@ function injectDayButtons() {
       width: "24px",
     });
 
-    btnHoliday.onclick = (e) => {
+    btnHoliday.onclick = async (e) => {
       e.stopPropagation();
       e.preventDefault();
       console.warn("[SmartShift] Holiday ⬇️ Clicked at", new Date().toISOString());
 
-      showCustomConfirm(`【希望休】\n${group.elements.length}件を一括申請しますか？`, async () => {
-        console.warn(
-          "[SmartShift] Confirm OK (Holiday) processing started at",
-          new Date().toISOString(),
-        );
+      console.warn(
+        "[SmartShift] Holiday Bulk Apply processing started directly at",
+        new Date().toISOString(),
+      );
 
-        let count = 0;
+      // クリック時に最新の要素を再取得（Stale Element対策）
+      const currentCells = Array.from(
+        document.querySelectorAll(".staffpage-plan-list-shift"),
+      ) as HTMLElement[];
+      const targetCells = currentCells.filter((cell) => {
+        const rect = cell.getBoundingClientRect();
+        const btn = cell.querySelector(
+          'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
+        ) as HTMLButtonElement;
+        const isEnabled = btn && !btn.disabled;
 
-        for (const el of group.elements) {
-          if (el.querySelector(".smartshift-btn")) {
-            try {
-              console.warn(`[SmartShift] Processing Holiday item ${count + 1} start`);
-              await handleHolidayApply(el, true);
-              count++;
-            } catch (e) {
-              console.error("Apply failed for cell", e);
-            }
+        // 同じ列であるか判定
+        return isEnabled && Math.abs(Math.round(rect.left) - group.left) < 10;
+      });
+
+      // 上から順に処理
+      targetCells.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+
+      let count = 0;
+
+      for (const el of targetCells) {
+        if (el.querySelector(".smartshift-btn")) {
+          try {
+            console.warn(`[SmartShift] Processing Holiday item ${count + 1} start`);
+            await handleHolidayApply(el, true);
+            count++;
+          } catch (e) {
+            console.error("Apply failed for cell", e);
           }
         }
+      }
 
-        alert(`${count}件の処理が完了しました`);
-      });
+      alert(`${count}件の処理が完了しました`);
     };
 
     container.appendChild(btnPreset);
     container.appendChild(btnHoliday);
     document.body.appendChild(container);
   });
-}
-
-function showCustomConfirm(message: string, onConfirm: () => void) {
-  const existing = document.getElementById("smartshift-confirm-dialog");
-
-  if (existing) {
-    existing.remove();
-  }
-
-  const overlay = document.createElement("div");
-
-  overlay.id = "smartshift-confirm-dialog";
-
-  Object.assign(overlay.style, {
-    alignItems: "center",
-    background: "rgba(0, 0, 0, 0.5)",
-    display: "flex",
-    height: "100%",
-    justifyContent: "center",
-    left: "0",
-    position: "fixed",
-    top: "0",
-    width: "100%",
-    zIndex: "999999",
-  });
-
-  overlay.onclick = (e) => e.stopPropagation();
-
-  const dialog = document.createElement("div");
-
-  Object.assign(dialog.style, {
-    background: "white",
-    borderRadius: "8px",
-    boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
-    maxWidth: "400px",
-    padding: "20px",
-    textAlign: "center",
-    whiteSpace: "pre-wrap",
-  });
-
-  const msgEl = document.createElement("p");
-
-  msgEl.textContent = message;
-  msgEl.style.marginBottom = "20px";
-  msgEl.style.fontSize = "16px";
-  msgEl.style.fontWeight = "bold";
-
-  const btnGroup = document.createElement("div");
-
-  btnGroup.style.display = "flex";
-  btnGroup.style.justifyContent = "center";
-  btnGroup.style.gap = "10px";
-
-  const cancelBtn = document.createElement("button");
-
-  cancelBtn.textContent = "いいえ";
-
-  Object.assign(cancelBtn.style, {
-    background: "#f3f4f6",
-    border: "1px solid #ccc",
-    borderRadius: "4px",
-    cursor: "pointer",
-    padding: "8px 16px",
-  });
-
-  cancelBtn.onclick = () => overlay.remove();
-
-  const okBtn = document.createElement("button");
-
-  okBtn.textContent = "はい（実行）";
-
-  Object.assign(okBtn.style, {
-    background: "#2563eb",
-    border: "none",
-    borderRadius: "4px",
-    color: "white",
-    cursor: "pointer",
-    fontWeight: "bold",
-    padding: "8px 16px",
-  });
-
-  okBtn.onclick = () => {
-    console.warn("[SmartShift] Dialog OK clicked at", new Date().toISOString());
-    overlay.remove();
-
-    // 遅延要因と思われる RAF を削除し、即実行
-    // UIブロックを防ぐために setTimeout 0 だけ噛ませる
-    setTimeout(() => {
-      onConfirm();
-    }, 0);
-  };
-
-  btnGroup.appendChild(cancelBtn);
-  btnGroup.appendChild(okBtn);
-
-  dialog.appendChild(msgEl);
-  dialog.appendChild(btnGroup);
-  overlay.appendChild(dialog);
-
-  document.body.appendChild(overlay);
 }
 
 // 個別シフト適用（Promise版）
