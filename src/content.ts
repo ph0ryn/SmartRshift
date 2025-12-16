@@ -397,11 +397,18 @@ async function handleShiftApply(shiftElement: HTMLElement, isAuto = false): Prom
   return new Promise((resolve, reject) => {
     let preset: any = null;
 
+    // 1. キャッシュからActiveなものを探す
     if (cachedPresets && cachedActivePresetId) {
       preset = cachedPresets.find((p: any) => p.id === cachedActivePresetId);
-    } else if (cachedPresets.length > 0) {
+    }
+
+    // 2. なければ先頭を使う
+    if (!preset && cachedPresets && cachedPresets.length > 0) {
       preset = cachedPresets[0];
-    } else {
+    }
+
+    // 3. それでもなければデフォルト値
+    if (!preset) {
       preset = {
         endHour: "18",
         endMinute: "00",
