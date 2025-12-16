@@ -15,7 +15,7 @@
 1. リポジトリをクローン
 
    ```bash
-   git clone https://github.com/yourusername/smartshift.git
+   git clone https://github.com/ph0ryn/smartshift.git
    cd smartshift
    ```
 
