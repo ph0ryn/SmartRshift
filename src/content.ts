@@ -331,20 +331,12 @@ async function handleShiftApply(shiftElement: HTMLElement): Promise<void> {
       preset = cachedPresets.find((p: any) => p.id === cachedActivePresetId);
     }
 
-    // 2. なければ先頭を使う
-    if (!preset && cachedPresets && cachedPresets.length > 0) {
-      [preset] = cachedPresets;
-    }
-
-    // 3. それでもなければデフォルト値
+    // 2. なければエラー（勝手に先頭やデフォルトを使わない）
     if (!preset) {
-      preset = {
-        endHour: "18",
-        endMinute: "00",
-        shiftType: "1",
-        startHour: "09",
-        startMinute: "00",
-      };
+      alert("適用するプリセットが見つかりません。ポップアップでプリセットを選択してください。");
+      reject(new Error("No active preset selected"));
+
+      return;
     }
 
     const applyBtn = shiftElement.querySelector(
