@@ -1,11 +1,7 @@
 console.log("SmartShift Content Script Loaded");
 
-type JobType = "PRESET" | "HOLIDAY";
-
-interface Job {
-  index: number;
-  type: JobType;
-}
+let cachedPresets: any[] = [];
+let cachedActivePresetId: string = "";
 
 // ページ読み込み完了を待機
 if (document.readyState === "loading") {
@@ -16,11 +12,20 @@ if (document.readyState === "loading") {
 
 function init() {
   console.log("SmartShift Initializing...");
-  injectButtons();
-  injectDayButtons();
 
-  // ページロード時にキューに残っているジョブがあれば処理再開
-  processQueue();
+  // キャッシュの初期化
+  chrome.storage.local.get(["presets", "activePresetId", "shiftPreset"], (items: any) => {
+    cachedPresets = items.presets || [];
+    cachedActivePresetId = items.activePresetId || "";
+
+    // 旧データ互換
+    if (!cachedPresets.length && items.shiftPreset) {
+      cachedPresets = [items.shiftPreset];
+    }
+
+    injectButtons();
+    injectDayButtons();
+  });
 
   // 動的なDOM変更を監視
   const observer = new MutationObserver((mutations) => {
@@ -42,86 +47,6 @@ function init() {
     childList: true,
     subtree: true,
   });
-}
-
-// ジョブを追加して処理開始（Storage使用）
-function enqueueJobs(jobs: Job[]) {
-  chrome.storage.local.get("jobQueue", (items: any) => {
-    const currentQueue = items.jobQueue || [];
-    const newQueue = currentQueue.concat(jobs);
-
-    chrome.storage.local.set({ jobQueue: newQueue }, () => {
-      processQueue();
-    });
-  });
-}
-
-// キューの処理（永続化対応）
-function processQueue() {
-  chrome.storage.local.get("jobQueue", (items: any) => {
-    const queue: Job[] = items.jobQueue || [];
-
-    if (queue.length === 0) {
-      return;
-    }
-
-    const job = queue[0];
-
-    // 対象要素の特定
-    const shifts = document.querySelectorAll(".staffpage-plan-list-shift");
-    const target = shifts[job.index] as HTMLElement;
-
-    if (!target) {
-      console.warn(`Target shift cell at index ${job.index} not found. Skipping.`);
-      finishJobAndContinue(queue);
-
-      return;
-    }
-
-    // 処理実行
-    executeJob(target, job)
-      .then(() => {
-        // 成功した場合（保存ボタン押下後）
-        // リロード待ちを行い、リロードされなければ次へ
-        finishJobAndContinue(queue);
-      })
-      .catch((err) => {
-        console.error("Job failed:", err);
-        // 失敗したらスキップして次へ
-        finishJobAndContinue(queue);
-      });
-  });
-}
-
-function finishJobAndContinue(currentQueue: Job[]) {
-  // 先頭を削除して保存
-  const nextQueue = currentQueue.slice(1);
-
-  chrome.storage.local.set({ jobQueue: nextQueue }, () => {
-    // まだ残っていれば、リロードされなかった場合に備えて次を実行
-    if (nextQueue.length > 0) {
-      // ページ遷移（リロード）を少し待つ
-      // リロードされれば init() が呼ばれるので、ここのタイマーはキャンセルされる（ページ破棄される）
-      setTimeout(() => {
-        // ページが生きていれば次を実行
-        if (!document.hidden) {
-          processQueue();
-        }
-      }, 1500); // 少し長めに待つ
-    } else {
-      setTimeout(() => {
-        alert("一括処理が完了しました🎉");
-      }, 500);
-    }
-  });
-}
-
-async function executeJob(target: HTMLElement, job: Job): Promise<void> {
-  if (job.type === "PRESET") {
-    return handleShiftApply(target, true); // true = 自動実行モード
-  } else {
-    return handleHolidayApply(target, true);
-  }
 }
 
 function injectButtons() {
@@ -228,22 +153,20 @@ function injectDayButtons() {
     return;
   }
 
-  const colGroups: { left: number; elements: HTMLElement[]; indices: number[] }[] = [];
+  const colGroups: { left: number; elements: HTMLElement[] }[] = [];
 
-  cells.forEach((cell, index) => {
+  cells.forEach((cell) => {
     const rect = cell.getBoundingClientRect();
     const left = Math.round(rect.left);
 
     let group = colGroups.find((g) => Math.abs(g.left - left) < 5);
 
     if (!group) {
-      group = { elements: [], indices: [], left };
+      group = { elements: [], left };
       colGroups.push(group);
     }
 
     group.elements.push(cell as HTMLElement);
-    // 元のNodeList内でのインデックスを保存
-    group.indices.push(index);
   });
 
   colGroups.sort((a, b) => a.left - b.left);
@@ -292,17 +215,23 @@ function injectDayButtons() {
       e.preventDefault();
 
       showCustomConfirm(
-        `【出勤】\n${group.elements.length}件のシフトを一括適用しますか？\n※ページのリロードを伴います`,
-        () => {
-          const jobs: Job[] = [];
+        `【出勤】\n${group.elements.length}件のシフトを一括適用しますか？`,
+        async () => {
+          let count = 0;
 
-          group.elements.forEach((el, i) => {
+          for (const el of group.elements) {
+            // ⚡️ボタンがあるセルのみを対象とする
             if (el.querySelector(".smartshift-btn")) {
-              jobs.push({ index: group.indices[i], type: "PRESET" });
+              try {
+                await handleShiftApply(el, true);
+                count++;
+              } catch (e) {
+                console.error(e);
+              }
             }
-          });
+          }
 
-          enqueueJobs(jobs);
+          alert(`${count}件の処理が完了しました`);
         },
       );
     };
@@ -328,20 +257,22 @@ function injectDayButtons() {
       e.stopPropagation();
       e.preventDefault();
 
-      showCustomConfirm(
-        `【希望休】\n${group.elements.length}件を一括申請しますか？\n※ページのリロードを伴います`,
-        () => {
-          const jobs: Job[] = [];
+      showCustomConfirm(`【希望休】\n${group.elements.length}件を一括申請しますか？`, async () => {
+        let count = 0;
 
-          group.elements.forEach((el, i) => {
-            if (el.querySelector(".smartshift-btn")) {
-              jobs.push({ index: group.indices[i], type: "HOLIDAY" });
+        for (const el of group.elements) {
+          if (el.querySelector(".smartshift-btn")) {
+            try {
+              await handleHolidayApply(el, true);
+              count++;
+            } catch (e) {
+              console.error(e);
             }
-          });
+          }
+        }
 
-          enqueueJobs(jobs);
-        },
-      );
+        alert(`${count}件の処理が完了しました`);
+      });
     };
 
     container.appendChild(btnPreset);
@@ -449,45 +380,48 @@ function showCustomConfirm(message: string, onConfirm: () => void) {
 // 個別シフト適用（Promise版）
 async function handleShiftApply(shiftElement: HTMLElement, isAuto = false): Promise<void> {
   return new Promise((resolve, reject) => {
-    chrome.storage.local.get(["presets", "activePresetId", "shiftPreset"], (items: any) => {
-      if (items.presets && items.activePresetId) {
-        preset = items.presets.find((p: any) => p.id === items.activePresetId);
-      } else if (items.shiftPreset) {
-        preset = items.shiftPreset;
-      } else {
-        preset = {
-          endHour: "18",
-          endMinute: "00",
-          shiftType: "1",
-          startHour: "09",
-          startMinute: "00",
-        };
-      }
+    let preset: any = null;
 
-      const applyBtn = shiftElement.querySelector(
-        'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
-      );
+    // キャッシュを使用（高速化）
+    if (cachedPresets && cachedActivePresetId) {
+      preset = cachedPresets.find((p: any) => p.id === cachedActivePresetId);
+    } else if (cachedPresets.length > 0) {
+      // ActiveIdがない場合はとりあえず先頭を使う等のフォールバック
+      preset = cachedPresets[0];
+    } else {
+      // キャッシュがない場合（初期化前など）はデフォルト
+      preset = {
+        endHour: "18",
+        endMinute: "00",
+        shiftType: "1",
+        startHour: "09",
+        startMinute: "00",
+      };
+    }
 
-      if (!applyBtn) {
-        // ボタンがない（編集中など）場合はスキップ
-        console.warn("Shift application button not found in cell, skipping.");
-        resolve(); // エラーにはしない
+    const applyBtn = shiftElement.querySelector(
+      'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
+    );
 
-        return;
-      }
+    if (!applyBtn) {
+      // ボタンがない（編集中など）場合はスキップ
+      console.warn("Shift application button not found in cell, skipping.");
+      resolve(); // エラーにはしない
 
-      if (!preset && !isAuto) {
-        alert("プリセットが見つかりません。Popupから設定を追加して選択してください。");
-        reject(new Error("No preset"));
+      return;
+    }
 
-        return;
-      }
+    if (!preset && !isAuto) {
+      alert("プリセットが見つかりません。Popupから設定を追加して選択してください。");
+      reject(new Error("No preset"));
 
-      (applyBtn as HTMLElement).click();
+      return;
+    }
 
-      // モーダル操作待機
-      waitForModalAndApply(preset).then(resolve).catch(reject);
-    });
+    (applyBtn as HTMLElement).click();
+
+    // モーダル操作待機
+    waitForModalAndApply(preset).then(resolve).catch(reject);
   });
 }
 
@@ -655,8 +589,7 @@ function applyValuesToModal(modal: HTMLElement, preset: any) {
     }
   }
 
-  // 「一瞬で消える」対策：入力をユーザーが視認できるように、かつイベントの伝搬を確実にするため
-  // 少し待ってから登録ボタンを押す
+  // 「一瞬で消える」対策としてウェイトを入れていたが、遅いので短縮
   setTimeout(() => {
     const submitBtn = modal.querySelector("#pupup_change") as HTMLElement;
 
@@ -666,5 +599,5 @@ function applyValuesToModal(modal: HTMLElement, preset: any) {
       console.error("Submit button not found");
       alert("登録ボタン(#pupup_change)が見つかりませんでした。");
     }
-  }, 500); // 500msのウェイト（前は100ms）
+  }, 100); // 500ms -> 100ms
 }
