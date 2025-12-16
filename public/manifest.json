@@ -6,10 +6,6 @@
         "default_title": "SmartShift",
         "default_popup": "popup/index.html"
     },
-    "background": {
-        "service_worker": "background.js",
-        "type": "module"
-    },
     "permissions": [
         "storage"
     ],
