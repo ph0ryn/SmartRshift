@@ -43,7 +43,16 @@ function injectButtons() {
       return;
     }
 
-    // シフトセルが十分に描画されているか確認（ボタン注入用の親要素として適切か）
+    // 申請ボタンが有効かチェック
+    const applyBtn = shift.querySelector(
+      'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
+    ) as HTMLButtonElement | null;
+
+    // 申請ボタンがない、またはdisabledの場合はスキップ
+    if (!applyBtn || applyBtn.disabled) {
+      return;
+    }
+
     if (window.getComputedStyle(shift).position === "static") {
       shift.style.position = "relative";
     }
