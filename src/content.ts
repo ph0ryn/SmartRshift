@@ -466,42 +466,59 @@ async function handleHolidayApply(shiftElement: HTMLElement, isAuto = false): Pr
 
 function waitForModalAndApply(preset: any): Promise<void> {
   return new Promise((resolve, reject) => {
-    const modal = document.getElementById("popup");
+    let attempts = 0;
 
-    if (!modal) {
-      setTimeout(() => waitForModalAndApply(preset).then(resolve).catch(reject), 100);
+    // 既に開いている場合の即時チェック
+    const initialModal = document.getElementById("popup");
 
-      return;
+    if (initialModal && window.getComputedStyle(initialModal).display !== "none") {
+      try {
+        applyValuesToModal(initialModal, preset);
+        waitForModalClose(initialModal, resolve, reject);
+
+        return;
+      } catch (e) {
+        console.error(e);
+      }
     }
 
-    let attempts = 0;
     const checkVisible = setInterval(() => {
       attempts++;
 
-      if (attempts > 50) {
-        clearInterval(checkVisible);
-        console.error("Modal open timeout");
-        reject(new Error("Modal open timeout"));
+      // 毎回最新の要素を取得する
+      const modal = document.getElementById("popup");
+
+      if (!modal) {
+        if (attempts > 20) {
+          // 要素自体が2秒見つからなければエラー
+          clearInterval(checkVisible);
+          console.warn("[SmartShift] Modal element #popup not found");
+          reject(new Error("Modal element not found"));
+        }
 
         return;
       }
 
+      const style = window.getComputedStyle(modal);
       const isVisible =
-        (modal.style.display !== "none" && modal.classList.contains("in")) ||
-        window.getComputedStyle(modal).display === "block";
+        style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
 
       if (isVisible) {
         clearInterval(checkVisible);
 
         try {
-          // モーダル操作を行い、送信ボタンを押す
           applyValuesToModal(modal, preset);
-
-          // 【重要】モーダルが閉じるまで待機する
           waitForModalClose(modal, resolve, reject);
         } catch (e) {
           reject(e);
         }
+      } else if (attempts > 30) {
+        // 3秒待っても表示されなければタイムアウト
+        clearInterval(checkVisible);
+        console.warn("[SmartShift] Modal open timeout (Element exists but not visible)");
+        reject(new Error("Modal open timeout"));
+
+        return;
       }
     }, 100);
   });
