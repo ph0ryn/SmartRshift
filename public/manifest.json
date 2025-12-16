@@ -1,9 +1,9 @@
 {
     "manifest_version": 3,
-    "name": "SmartShift",
-    "version": "0.1.0",
+    "name": "SmartRshift",
+    "version": "1.0.0",
     "action": {
-        "default_title": "SmartShift",
+        "default_title": "SmartRshift",
         "default_popup": "popup/index.html"
     },
     "permissions": [

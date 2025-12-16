@@ -1,12 +1,11 @@
 {
-  "name": "smart-shift",
-  "module": "index.ts",
+  "name": "smart-rshift",
+  "version": "1.0.0",
   "type": "module",
   "private": true,
   "scripts": {
     "lint": "bunx oxlint --type-aware",
     "format": "bunx oxlint --type-aware --fix . ; bunx oxfmt . ; bunx eslint --fix .",
-    "check": "bunx tsc --noEmit",
     "build": "bun run format && bun run build.ts"
   },
   "devDependencies": {
