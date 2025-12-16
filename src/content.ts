@@ -173,21 +173,16 @@ function injectDayButtons() {
 
   colGroups.forEach((group) => {
     const [topCell] = group.elements;
-    const rect = topCell.getBoundingClientRect();
-
-    const pageTop = rect.top + window.scrollY;
-    const pageLeft = rect.left + window.scrollX;
-
     const container = document.createElement("div");
 
     container.className = "smartshift-day-btn-group";
 
     Object.assign(container.style, {
-      left: `${pageLeft}px`,
+      left: "0",
       position: "absolute",
       textAlign: "center",
-      top: `${pageTop - 40}px`,
-      width: `${rect.width}px`,
+      top: "-45px", // Adjust based on cell height/padding
+      width: "100%",
       zIndex: "10000",
     });
 
@@ -305,7 +300,7 @@ function injectDayButtons() {
 
     container.appendChild(btnPreset);
     container.appendChild(btnHoliday);
-    document.body.appendChild(container);
+    topCell.appendChild(container);
   });
 }
 
