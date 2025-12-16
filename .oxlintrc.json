@@ -1,0 +1,81 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript"
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "off",
+    "pedantic": "off",
+    "style": "error",
+    "restriction": "off",
+    "nursery": "warn"
+  },
+  "env": {
+    "node": true
+  },
+  "globals": {
+    "Bun": "readonly"
+  },
+  "ignorePatterns": [
+    "dist/**",
+    "eslint.config.mjs",
+    "node_modules/**"
+  ],
+  "rules": {
+    "func-style": "off",
+    "id-length": "off",
+    "no-inferrable-types": "off",
+    "no-magic-numbers": "off",
+    "no-ternary": "off",
+    "prefer-destructuring": "warn",
+    "sort-imports": "off"
+  },
+  "overrides": [
+    {
+      "files": [
+        "src/**/*.ts"
+      ],
+      "rules": {
+        "@stylistic/padding-line-between-statements": [
+          "error",
+          {
+            "blankLine": "always",
+            "prev": "*",
+            "next": [
+              "return",
+              "multiline-expression",
+              "block-like",
+              "try",
+              "throw"
+            ]
+          },
+          {
+            "blankLine": "always",
+            "prev": [
+              "multiline-expression",
+              "block-like",
+              "const",
+              "let"
+            ],
+            "next": "*"
+          },
+          {
+            "blankLine": "any",
+            "prev": [
+              "const",
+              "let"
+            ],
+            "next": [
+              "const",
+              "let"
+            ]
+          }
+        ]
+      },
+      "jsPlugins": [
+        "@stylistic/eslint-plugin"
+      ]
+    }
+  ]
+}
