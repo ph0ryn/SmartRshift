@@ -260,19 +260,9 @@ function injectDayButtons() {
 
     const btnHoliday = document.createElement("button");
 
+    btnHoliday.className = "smartshift-day-btn holiday";
     btnHoliday.textContent = "🏖️";
     btnHoliday.title = "この曜日を全て希望休に";
-
-    Object.assign(btnHoliday.style, {
-      background: "#e0f7fa",
-      border: "1px solid #ccc",
-      borderRadius: "4px",
-      cursor: "pointer",
-      fontSize: "12px",
-      height: "24px",
-      padding: 0,
-      width: "24px",
-    });
 
     btnHoliday.onclick = async (e) => {
       e.stopPropagation();
