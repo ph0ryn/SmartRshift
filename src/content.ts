@@ -420,7 +420,7 @@ async function handleShiftApply(shiftElement: HTMLElement, isAuto = false): Prom
 
     const applyBtn = shiftElement.querySelector(
       'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
-    );
+    ) as HTMLElement;
 
     if (!applyBtn) {
       console.warn("Shift application button not found in cell, skipping.");
@@ -429,19 +429,12 @@ async function handleShiftApply(shiftElement: HTMLElement, isAuto = false): Prom
       return;
     }
 
-    if (!preset && !isAuto) {
-      alert("プリセットが見つかりません。Popupから設定を追加して選択してください。");
-      reject(new Error("No preset"));
+    // UI上のボタンクリック（初回）
+    console.warn("[SmartShift] Clicking apply button...");
+    applyBtn.click();
 
-      return;
-    }
-
-    console.log("[SmartShift] Clicking apply button...");
-    (applyBtn as HTMLElement).click();
-    console.log("[SmartShift] Apply button clicked.");
-
-    // モーダル操作待機とモーダル閉塞待機を含む
-    waitForModalAndApply(preset).then(resolve).catch(reject);
+    // モーダル操作待機（ボタン要素も渡して再試行可能にする）
+    waitForModalAndApply(preset, applyBtn).then(resolve).catch(reject);
   });
 }
 
@@ -464,36 +457,46 @@ async function handleHolidayApply(shiftElement: HTMLElement, isAuto = false): Pr
   });
 }
 
-function waitForModalAndApply(preset: any): Promise<void> {
+function waitForModalAndApply(preset: any, triggerBtn?: HTMLElement): Promise<void> {
   return new Promise((resolve, reject) => {
     let attempts = 0;
 
+    const getModal = () => document.getElementById("popup") || document.querySelector(".modal");
+
     // 既に開いている場合の即時チェック
-    const initialModal = document.getElementById("popup");
+    const initialModal = getModal();
 
     if (initialModal && window.getComputedStyle(initialModal).display !== "none") {
       try {
-        applyValuesToModal(initialModal, preset);
-        waitForModalClose(initialModal, resolve, reject);
+        console.warn("[SmartShift] Existing modal found, applying immediately.");
+        applyValuesToModal(initialModal as HTMLElement, preset);
+        waitForModalClose(initialModal as HTMLElement, resolve, reject);
 
         return;
       } catch (e) {
-        console.error(e);
+        console.error("Failed to apply to existing modal", e);
       }
     }
 
     const checkVisible = setInterval(() => {
       attempts++;
 
-      // 毎回最新の要素を取得する
-      const modal = document.getElementById("popup");
+      const modal = getModal();
 
-      if (!modal) {
-        if (attempts > 20) {
-          // 要素自体が2秒見つからなければエラー
+      // 15回（1.5秒）待ってもモーダルが出ない＆トリガーボタンがある場合、もう一度押す
+      if (!modal || window.getComputedStyle(modal).display === "none") {
+        if (attempts === 15 && triggerBtn) {
+          console.warn("[SmartShift] Modal not appeared, retrying click...");
+          triggerBtn.click();
+        }
+
+        if (attempts > 50) {
+          // 5秒待ってもダメならエラー
           clearInterval(checkVisible);
-          console.warn("[SmartShift] Modal element #popup not found");
-          reject(new Error("Modal element not found"));
+          console.warn("[SmartShift] Modal open timeout");
+          reject(new Error("Modal open timeout"));
+
+          return;
         }
 
         return;
@@ -507,18 +510,12 @@ function waitForModalAndApply(preset: any): Promise<void> {
         clearInterval(checkVisible);
 
         try {
-          applyValuesToModal(modal, preset);
-          waitForModalClose(modal, resolve, reject);
+          console.warn("[SmartShift] Modal detected, applying values.");
+          applyValuesToModal(modal as HTMLElement, preset);
+          waitForModalClose(modal as HTMLElement, resolve, reject);
         } catch (e) {
           reject(e);
         }
-      } else if (attempts > 30) {
-        // 3秒待っても表示されなければタイムアウト
-        clearInterval(checkVisible);
-        console.warn("[SmartShift] Modal open timeout (Element exists but not visible)");
-        reject(new Error("Modal open timeout"));
-
-        return;
       }
     }, 100);
   });
