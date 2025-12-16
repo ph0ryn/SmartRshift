@@ -13,7 +13,7 @@ if (document.readyState === "loading") {
 function init() {
   console.log("SmartShift Initializing...");
 
-  // キャッシュの初期化
+  // キャッシュの初期化（読み取りのみ）
   chrome.storage.local.get(["presets", "activePresetId", "shiftPreset"], (items: any) => {
     cachedPresets = items.presets || [];
     cachedActivePresetId = items.activePresetId || "";
@@ -178,7 +178,6 @@ function injectDayButtons() {
     const pageTop = rect.top + window.scrollY;
     const pageLeft = rect.left + window.scrollX;
 
-    // ボタンコンテナ
     const container = document.createElement("div");
 
     container.className = "smartshift-day-btn-group";
@@ -192,7 +191,6 @@ function injectDayButtons() {
       zIndex: "10000",
     });
 
-    // 一括適用ボタン (⚡️)
     const btnPreset = document.createElement("button");
 
     btnPreset.textContent = "⚡️";
@@ -223,10 +221,11 @@ function injectDayButtons() {
             // ⚡️ボタンがあるセルのみを対象とする
             if (el.querySelector(".smartshift-btn")) {
               try {
+                // awaitすることで「モーダルが開く→閉じる」まで待つ
                 await handleShiftApply(el, true);
                 count++;
               } catch (e) {
-                console.error(e);
+                console.error("Apply failed for cell", e);
               }
             }
           }
@@ -236,7 +235,6 @@ function injectDayButtons() {
       );
     };
 
-    // 希望休一括ボタン (🏖️)
     const btnHoliday = document.createElement("button");
 
     btnHoliday.textContent = "🏖️";
@@ -266,7 +264,7 @@ function injectDayButtons() {
               await handleHolidayApply(el, true);
               count++;
             } catch (e) {
-              console.error(e);
+              console.error("Apply failed for cell", e);
             }
           }
         }
@@ -282,7 +280,6 @@ function injectDayButtons() {
 }
 
 function showCustomConfirm(message: string, onConfirm: () => void) {
-  // 既存のダイアログがあれば削除
   const existing = document.getElementById("smartshift-confirm-dialog");
 
   if (existing) {
@@ -306,7 +303,6 @@ function showCustomConfirm(message: string, onConfirm: () => void) {
     zIndex: "999999",
   });
 
-  // クリックで背景で閉じないようにする（誤操作防止）
   overlay.onclick = (e) => e.stopPropagation();
 
   const dialog = document.createElement("div");
@@ -318,7 +314,7 @@ function showCustomConfirm(message: string, onConfirm: () => void) {
     maxWidth: "400px",
     padding: "20px",
     textAlign: "center",
-    whiteSpace: "pre-wrap", // 改行コード反映
+    whiteSpace: "pre-wrap",
   });
 
   const msgEl = document.createElement("p");
@@ -382,14 +378,11 @@ async function handleShiftApply(shiftElement: HTMLElement, isAuto = false): Prom
   return new Promise((resolve, reject) => {
     let preset: any = null;
 
-    // キャッシュを使用（高速化）
     if (cachedPresets && cachedActivePresetId) {
       preset = cachedPresets.find((p: any) => p.id === cachedActivePresetId);
     } else if (cachedPresets.length > 0) {
-      // ActiveIdがない場合はとりあえず先頭を使う等のフォールバック
       preset = cachedPresets[0];
     } else {
-      // キャッシュがない場合（初期化前など）はデフォルト
       preset = {
         endHour: "18",
         endMinute: "00",
@@ -404,9 +397,8 @@ async function handleShiftApply(shiftElement: HTMLElement, isAuto = false): Prom
     );
 
     if (!applyBtn) {
-      // ボタンがない（編集中など）場合はスキップ
       console.warn("Shift application button not found in cell, skipping.");
-      resolve(); // エラーにはしない
+      resolve();
 
       return;
     }
@@ -420,7 +412,7 @@ async function handleShiftApply(shiftElement: HTMLElement, isAuto = false): Prom
 
     (applyBtn as HTMLElement).click();
 
-    // モーダル操作待機
+    // モーダル操作待機とモーダル閉塞待機を含む
     waitForModalAndApply(preset).then(resolve).catch(reject);
   });
 }
@@ -449,7 +441,6 @@ function waitForModalAndApply(preset: any): Promise<void> {
     const modal = document.getElementById("popup");
 
     if (!modal) {
-      // まだDOMにない場合
       setTimeout(() => waitForModalAndApply(preset).then(resolve).catch(reject), 100);
 
       return;
@@ -460,7 +451,6 @@ function waitForModalAndApply(preset: any): Promise<void> {
       attempts++;
 
       if (attempts > 50) {
-        // 5秒タイムアウト
         clearInterval(checkVisible);
         console.error("Modal open timeout");
         reject(new Error("Modal open timeout"));
@@ -468,22 +458,52 @@ function waitForModalAndApply(preset: any): Promise<void> {
         return;
       }
 
-      if (
+      const isVisible =
         (modal.style.display !== "none" && modal.classList.contains("in")) ||
-        window.getComputedStyle(modal).display === "block"
-      ) {
+        window.getComputedStyle(modal).display === "block";
+
+      if (isVisible) {
         clearInterval(checkVisible);
 
-        // 適用処理
         try {
+          // モーダル操作を行い、送信ボタンを押す
           applyValuesToModal(modal, preset);
-          resolve();
+
+          // 【重要】モーダルが閉じるまで待機する
+          waitForModalClose(modal, resolve, reject);
         } catch (e) {
           reject(e);
         }
       }
     }, 100);
   });
+}
+
+// モーダルが閉じるのを待つ
+function waitForModalClose(modal: HTMLElement, resolve: () => void, reject: (err: any) => void) {
+  let attempts = 0;
+  const checkHidden = setInterval(() => {
+    attempts++;
+
+    if (attempts > 50) {
+      // 5秒待っても閉じない場合はエラーとして次に進む（or 成功扱いにするか判断）
+      // ここではアラートが出ている等の可能性もあるが、一旦成功として処理を進める（ループ止めたくないため）
+      clearInterval(checkHidden);
+      console.warn("Modal close timeout, resolving anyway.");
+      resolve();
+
+      return;
+    }
+
+    const isVisible =
+      (modal.style.display !== "none" && modal.classList.contains("in")) ||
+      window.getComputedStyle(modal).display === "block";
+
+    if (!isVisible) {
+      clearInterval(checkHidden);
+      resolve(); // 閉じたので完了
+    }
+  }, 100);
 }
 
 function applyValuesToModal(modal: HTMLElement, preset: any) {
@@ -503,11 +523,9 @@ function applyValuesToModal(modal: HTMLElement, preset: any) {
   };
 
   if (preset.shiftType === "HOLIDAY") {
-    // 希望休の判定キーワード
     const keywords = ["希望休", "公休", "休日", "休み", "休暇", "有給", "欠勤"];
     let found = false;
 
-    // 1. ラジオボタン (Label検索)
     const labels = Array.from(modal.querySelectorAll("label"));
     const targetLabel = labels.find((l) => keywords.some((k) => l.innerText.includes(k)));
 
@@ -522,19 +540,16 @@ function applyValuesToModal(modal: HTMLElement, preset: any) {
       }
 
       if (radio) {
-        radio.click(); // clickも発火
+        radio.click();
         radio.checked = true;
-        radio.dispatchEvent(new Event("change", { bubbles: true })); // bubbles追加
+        radio.dispatchEvent(new Event("change", { bubbles: true }));
         found = true;
       }
     }
 
-    // 2. セレクトボックス (Option検索) - ラジオボタンで見つからなかった場合
     if (!found) {
       const selects = Array.from(modal.querySelectorAll("select"));
 
-      // ShiftTypeっぽい名前のselectを探すか、あるいは全てのselectのoptionを洗う
-      // ここではnameに"type"や"shift"が含まれるものを優先、あるいは全てのselectを見る
       for (const select of selects) {
         const options = Array.from(select.options);
         const targetOption = options.find((opt) => keywords.some((k) => opt.text.includes(k)));
@@ -552,33 +567,27 @@ function applyValuesToModal(modal: HTMLElement, preset: any) {
       console.error("Holiday element not found.");
 
       if (!document.hidden) {
-        alert(`「希望休」の項目が見つかりませんでした。\n画面上の項目名を確認してください。`);
+        // ループ中はアラート出すと止まるので、コンソールのみにする？
+        // いったんアラート出すが、要調整
+        // alert(`「希望休」の項目が見つかりませんでした。`);
       }
 
       throw new Error("Holiday element not found");
     }
   } else {
-    // 通常シフト適用
-    // 必須項目のチェック
     const r1 = setSelect("popup_from_hour", preset.startHour);
     const r2 = setSelect("popup_from_minutes", preset.startMinute);
     const r3 = setSelect("popup_to_hour", preset.endHour);
     const r4 = setSelect("popup_to_minutes", preset.endMinute);
 
     if (!r1 || !r2 || !r3 || !r4) {
-      const msg =
-        "シフト時間の入力欄が見つかりませんでした。\nサイトの仕様が変更された可能性があります。";
+      const msg = "シフト時間の入力欄が見つかりませんでした。";
 
       console.error(msg);
-
-      if (!document.hidden) {
-        alert(msg);
-      }
 
       throw new Error("Time input elements not found");
     }
 
-    // シフトタイプ（現状は "1" = 出勤 固定）
     const typeRadio = modal.querySelector(
       `input[name="popup_shift_type"][value="${preset.shiftType}"]`,
     ) as HTMLInputElement;
@@ -589,7 +598,6 @@ function applyValuesToModal(modal: HTMLElement, preset: any) {
     }
   }
 
-  // 「一瞬で消える」対策としてウェイトを入れていたが、遅いので短縮
   setTimeout(() => {
     const submitBtn = modal.querySelector("#pupup_change") as HTMLElement;
 
@@ -599,5 +607,5 @@ function applyValuesToModal(modal: HTMLElement, preset: any) {
       console.error("Submit button not found");
       alert("登録ボタン(#pupup_change)が見つかりませんでした。");
     }
-  }, 100); // 500ms -> 100ms
+  }, 100);
 }
