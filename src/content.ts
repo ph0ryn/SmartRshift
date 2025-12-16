@@ -237,34 +237,57 @@ function applyValuesToModal(modal: HTMLElement, preset: any) {
   };
 
   if (preset.shiftType === "HOLIDAY") {
-    // 希望休のラジオボタンを探す
-    // label要素のテキストに「希望休」が含まれているものを探す
-    const labels = Array.from(modal.querySelectorAll("label"));
-    const holidayLabel = labels.find((l) => l.innerText.includes("希望休"));
+    // 希望休の判定キーワード
+    const keywords = ["希望休", "公休", "休日", "休み", "休暇", "有給", "欠勤"];
+    let found = false;
 
-    if (holidayLabel) {
-      const radioId = holidayLabel.getAttribute("for");
+    // 1. ラジオボタン (Label検索)
+    const labels = Array.from(modal.querySelectorAll("label"));
+    const targetLabel = labels.find((l) => keywords.some((k) => l.innerText.includes(k)));
+
+    if (targetLabel) {
+      const radioId = targetLabel.getAttribute("for");
       let radio: HTMLInputElement | null = null;
 
       if (radioId) {
         radio = modal.querySelector(`#${radioId}`) as HTMLInputElement;
       } else {
-        // labelの中にinputがあるパターン
-        radio = holidayLabel.querySelector("input[type='radio']");
+        radio = targetLabel.querySelector("input[type='radio']");
       }
 
       if (radio) {
+        radio.click(); // clickも発火
         radio.checked = true;
-        radio.dispatchEvent(new Event("change"));
-      } else {
-        console.error("Holiday radio button not found.");
-        alert("希望休の選択肢が見つかりませんでした。");
-
-        return;
+        radio.dispatchEvent(new Event("change", { bubbles: true })); // bubbles追加
+        found = true;
       }
-    } else {
-      console.error("Holiday label not found.");
-      alert("「希望休」の項目が見つかりませんでした。");
+    }
+
+    // 2. セレクトボックス (Option検索) - ラジオボタンで見つからなかった場合
+    if (!found) {
+      const selects = Array.from(modal.querySelectorAll("select"));
+
+      // ShiftTypeっぽい名前のselectを探すか、あるいは全てのselectのoptionを洗う
+      // ここではnameに"type"や"shift"が含まれるものを優先、あるいは全てのselectを見る
+      for (const select of selects) {
+        const options = Array.from(select.options);
+        const targetOption = options.find((opt) => keywords.some((k) => opt.text.includes(k)));
+
+        if (targetOption) {
+          select.value = targetOption.value;
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+          found = true;
+          break;
+        }
+      }
+    }
+
+    if (!found) {
+      console.error("Holiday element not found.");
+
+      alert(
+        `「希望休」などの項目が自動検出できませんでした。\n検証キーワード: ${keywords.join(", ")}`,
+      );
 
       return;
     }
