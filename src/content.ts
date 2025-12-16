@@ -211,21 +211,19 @@ function injectDayButtons() {
     btnPreset.onclick = (e) => {
       e.stopPropagation();
       e.preventDefault();
-      console.time("BulkApplyTotal");
-      console.log("[SmartShift] ⬇️ Clicked at", new Date().toISOString());
+      console.warn("[SmartShift] ⬇️ Clicked at", new Date().toISOString());
 
       showCustomConfirm(
         `【出勤】\n${group.elements.length}件のシフトを一括適用しますか？`,
         async () => {
-          console.log("[SmartShift] Confirm OK at", new Date().toISOString());
+          console.warn("[SmartShift] Confirm OK processing started at", new Date().toISOString());
           let count = 0;
-
-          console.time("LoopStart");
 
           for (const el of group.elements) {
             // ⚡️ボタンがあるセルのみを対象とする
             if (el.querySelector(".smartshift-btn")) {
               try {
+                console.warn(`[SmartShift] Processing item ${count + 1} start`);
                 // awaitすることで「モーダルが開く→閉じる」まで待つ
                 await handleShiftApply(el, true);
                 count++;
@@ -235,8 +233,7 @@ function injectDayButtons() {
             }
           }
 
-          console.timeEnd("LoopStart");
-          console.timeEnd("BulkApplyTotal");
+          console.warn("[SmartShift] All items processed at", new Date().toISOString());
           alert(`${count}件の処理が完了しました`);
         },
       );
@@ -261,13 +258,20 @@ function injectDayButtons() {
     btnHoliday.onclick = (e) => {
       e.stopPropagation();
       e.preventDefault();
+      console.warn("[SmartShift] Holiday ⬇️ Clicked at", new Date().toISOString());
 
       showCustomConfirm(`【希望休】\n${group.elements.length}件を一括申請しますか？`, async () => {
+        console.warn(
+          "[SmartShift] Confirm OK (Holiday) processing started at",
+          new Date().toISOString(),
+        );
+
         let count = 0;
 
         for (const el of group.elements) {
           if (el.querySelector(".smartshift-btn")) {
             try {
+              console.warn(`[SmartShift] Processing Holiday item ${count + 1} start`);
               await handleHolidayApply(el, true);
               count++;
             } catch (e) {
@@ -366,15 +370,14 @@ function showCustomConfirm(message: string, onConfirm: () => void) {
   });
 
   okBtn.onclick = () => {
-    console.log("[SmartShift] Dialog OK clicked at", new Date().toISOString());
+    console.warn("[SmartShift] Dialog OK clicked at", new Date().toISOString());
     overlay.remove();
 
-    // UI描画更新のためにわずかに待つ（ここが原因か？）
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        onConfirm();
-      });
-    });
+    // 遅延要因と思われる RAF を削除し、即実行
+    // UIブロックを防ぐために setTimeout 0 だけ噛ませる
+    setTimeout(() => {
+      onConfirm();
+    }, 0);
   };
 
   btnGroup.appendChild(cancelBtn);
@@ -389,7 +392,7 @@ function showCustomConfirm(message: string, onConfirm: () => void) {
 
 // 個別シフト適用（Promise版）
 async function handleShiftApply(shiftElement: HTMLElement, isAuto = false): Promise<void> {
-  console.log("[SmartShift] handleShiftApply start", new Date().toISOString());
+  console.warn("[SmartShift] handleShiftApply start", new Date().toISOString());
 
   return new Promise((resolve, reject) => {
     let preset: any = null;
