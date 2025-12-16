@@ -211,7 +211,6 @@ function injectDayButtons() {
     btnPreset.onclick = async (e) => {
       e.stopPropagation();
       e.preventDefault();
-      console.warn("[SmartShift] ⬇️ Clicked at", new Date().toISOString());
 
       // クリック時に最新の要素を再取得（Stale Element対策）
       const currentCells = Array.from(
@@ -229,7 +228,6 @@ function injectDayButtons() {
         return isEnabled && Math.abs(Math.round(rect.left) - group.left) < 10;
       });
 
-      console.warn("[SmartShift] Bulk Apply processing started at", new Date().toISOString());
       let count = 0;
 
       // 上から順に処理
@@ -240,7 +238,6 @@ function injectDayButtons() {
         // (再検索してもクラス名は変わらない前提)
         if (el.querySelector(".smartshift-btn")) {
           try {
-            console.warn(`[SmartShift] Processing item ${count + 1} start`);
             await handleShiftApply(el, true);
             count++;
           } catch (e) {
@@ -249,7 +246,6 @@ function injectDayButtons() {
         }
       }
 
-      console.warn("[SmartShift] All items processed at", new Date().toISOString());
       alert(`${count}件の処理が完了しました`);
     };
 
@@ -272,12 +268,6 @@ function injectDayButtons() {
     btnHoliday.onclick = async (e) => {
       e.stopPropagation();
       e.preventDefault();
-      console.warn("[SmartShift] Holiday ⬇️ Clicked at", new Date().toISOString());
-
-      console.warn(
-        "[SmartShift] Holiday Bulk Apply processing started directly at",
-        new Date().toISOString(),
-      );
 
       // クリック時に最新の要素を再取得（Stale Element対策）
       const currentCells = Array.from(
@@ -302,7 +292,6 @@ function injectDayButtons() {
       for (const el of targetCells) {
         if (el.querySelector(".smartshift-btn")) {
           try {
-            console.warn(`[SmartShift] Processing Holiday item ${count + 1} start`);
             await handleHolidayApply(el, true);
             count++;
           } catch (e) {
@@ -321,11 +310,8 @@ function injectDayButtons() {
 }
 
 // 個別シフト適用（Promise版）
+// 個別シフト適用（Promise版）
 async function handleShiftApply(shiftElement: HTMLElement, isAuto = false): Promise<void> {
-  const start = performance.now();
-
-  console.warn(`[SmartShift] handleShiftApply start at ${new Date().toISOString()}`);
-
   return new Promise((resolve, reject) => {
     let preset: any = null;
 
@@ -355,26 +341,17 @@ async function handleShiftApply(shiftElement: HTMLElement, isAuto = false): Prom
     ) as HTMLElement;
 
     if (!applyBtn) {
-      console.warn("Shift application button not found in cell, skipping.");
       resolve();
 
       return;
     }
 
     // UI上のボタンクリック（初回）
-    console.warn(
-      `[SmartShift] Clicking apply button... (elapsed: ${(performance.now() - start).toFixed(2)}ms)`,
-    );
-
     applyBtn.click();
 
     // モーダル操作待機（ボタン要素も渡して再試行可能にする）
     waitForModalAndApply(preset, applyBtn)
       .then(() => {
-        console.warn(
-          `[SmartShift] handleShiftApply finished (total: ${(performance.now() - start).toFixed(2)}ms)`,
-        );
-
         resolve();
       })
       .catch(reject);
@@ -382,8 +359,6 @@ async function handleShiftApply(shiftElement: HTMLElement, isAuto = false): Prom
 }
 
 async function handleHolidayApply(shiftElement: HTMLElement, isAuto = false): Promise<void> {
-  const start = performance.now();
-
   return new Promise((resolve, reject) => {
     const preset = { shiftType: "HOLIDAY" };
     const applyBtn = shiftElement.querySelector(
@@ -391,15 +366,10 @@ async function handleHolidayApply(shiftElement: HTMLElement, isAuto = false): Pr
     ) as HTMLElement;
 
     if (!applyBtn) {
-      console.warn("Shift application button not found for holiday, skipping.");
       resolve();
 
       return;
     }
-
-    console.warn(
-      `[SmartShift] Clicking holiday apply button... (elapsed: ${(performance.now() - start).toFixed(2)}ms)`,
-    );
 
     applyBtn.click();
     waitForModalAndApply(preset, applyBtn).then(resolve).catch(reject);
@@ -407,8 +377,6 @@ async function handleHolidayApply(shiftElement: HTMLElement, isAuto = false): Pr
 }
 
 function waitForModalAndApply(preset: any, triggerBtn?: HTMLElement): Promise<void> {
-  const start = performance.now();
-
   return new Promise((resolve, reject) => {
     let attempts = 0;
 
@@ -419,10 +387,6 @@ function waitForModalAndApply(preset: any, triggerBtn?: HTMLElement): Promise<vo
 
     if (initialModal && window.getComputedStyle(initialModal).display !== "none") {
       try {
-        console.warn(
-          `[SmartShift] Existing modal found immediately (elapsed: ${(performance.now() - start).toFixed(2)}ms)`,
-        );
-
         applyValuesToModal(initialModal as HTMLElement, preset);
         waitForModalClose(initialModal as HTMLElement, resolve, reject);
 
@@ -434,27 +398,18 @@ function waitForModalAndApply(preset: any, triggerBtn?: HTMLElement): Promise<vo
 
     const checkVisible = setInterval(() => {
       attempts++;
-      const current = performance.now();
 
       const modal = getModal();
 
       // 15回（1.5秒）待ってもモーダルが出ない＆トリガーボタンがある場合、もう一度押す
       if (!modal || window.getComputedStyle(modal).display === "none") {
         if (attempts === 15 && triggerBtn) {
-          console.warn(
-            `[SmartShift] Modal not appeared, retrying click... (elapsed: ${(current - start).toFixed(2)}ms)`,
-          );
-
           triggerBtn.click();
         }
 
         if (attempts > 50) {
           // 5秒待ってもダメならエラー
           clearInterval(checkVisible);
-
-          console.warn(
-            `[SmartShift] Modal open timeout (elapsed: ${(current - start).toFixed(2)}ms)`,
-          );
 
           reject(new Error("Modal open timeout"));
 
@@ -472,10 +427,6 @@ function waitForModalAndApply(preset: any, triggerBtn?: HTMLElement): Promise<vo
         clearInterval(checkVisible);
 
         try {
-          console.warn(
-            `[SmartShift] Modal detected (elapsed: ${(current - start).toFixed(2)}ms), applying values...`,
-          );
-
           applyValuesToModal(modal as HTMLElement, preset);
           waitForModalClose(modal as HTMLElement, resolve, reject);
         } catch (e) {
@@ -487,21 +438,14 @@ function waitForModalAndApply(preset: any, triggerBtn?: HTMLElement): Promise<vo
 }
 
 // モーダルが閉じるのを待つ
+// モーダルが閉じるのを待つ
 function waitForModalClose(modal: HTMLElement, resolve: () => void, reject: (err: any) => void) {
-  const start = performance.now();
-
-  console.warn(`[SmartShift] waitForModalClose start`);
   let attempts = 0;
   const checkHidden = setInterval(() => {
     attempts++;
 
     if (attempts > 50) {
       clearInterval(checkHidden);
-
-      console.warn(
-        `[SmartShift] Modal close timeout (elapsed: ${(performance.now() - start).toFixed(2)}ms), resolving anyway.`,
-      );
-
       resolve();
 
       return;
@@ -513,11 +457,6 @@ function waitForModalClose(modal: HTMLElement, resolve: () => void, reject: (err
 
     if (!isVisible) {
       clearInterval(checkHidden);
-
-      console.warn(
-        `[SmartShift] Modal closed (elapsed: ${(performance.now() - start).toFixed(2)}ms)`,
-      );
-
       resolve(); // 閉じたので完了
     }
   }, 100);
