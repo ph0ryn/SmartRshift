@@ -213,18 +213,37 @@ function injectDayButtons() {
       e.preventDefault();
       console.warn("[SmartShift] ⬇️ Clicked at", new Date().toISOString());
 
+      // クリック時に最新の要素を再取得（Stale Element対策）
+      const currentCells = Array.from(
+        document.querySelectorAll(".staffpage-plan-list-shift"),
+      ) as HTMLElement[];
+      const targetCells = currentCells.filter((cell) => {
+        const rect = cell.getBoundingClientRect();
+        const pageLeft = rect.left + window.scrollX;
+
+        // ボタンの左位置(group.left)と近いものを同じ列とみなす
+        // group.leftはページ座標ではないため、pageLeftと比較するには補正が必要だが、
+        // ここではgroup作成時のlogicを再利用する方が安全
+        // group作成時は: const left = Math.round(rect.left);
+        // なので、現在のrect.leftと比較する
+        return Math.abs(Math.round(rect.left) - group.left) < 10;
+      });
+
       showCustomConfirm(
-        `【出勤】\n${group.elements.length}件のシフトを一括適用しますか？`,
+        `【出勤】\n${targetCells.length}件のシフトを一括適用しますか？`,
         async () => {
           console.warn("[SmartShift] Confirm OK processing started at", new Date().toISOString());
           let count = 0;
 
-          for (const el of group.elements) {
+          // 上から順に処理
+          targetCells.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+
+          for (const el of targetCells) {
             // ⚡️ボタンがあるセルのみを対象とする
+            // (再検索してもクラス名は変わらない前提)
             if (el.querySelector(".smartshift-btn")) {
               try {
                 console.warn(`[SmartShift] Processing item ${count + 1} start`);
-                // awaitすることで「モーダルが開く→閉じる」まで待つ
                 await handleShiftApply(el, true);
                 count++;
               } catch (e) {
