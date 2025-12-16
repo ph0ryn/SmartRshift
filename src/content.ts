@@ -1,3 +1,4 @@
+/* global chrome */
 console.log("SmartShift Content Script Loaded");
 
 let cachedPresets: any[] = [];
