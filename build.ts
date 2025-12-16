@@ -1,3 +1,4 @@
+/* global process */
 import { rm, mkdir, cp } from "node:fs/promises";
 
 const DIST = "./dist";
