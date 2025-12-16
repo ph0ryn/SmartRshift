@@ -28,6 +28,19 @@ function init() {
     injectButtons();
     injectDayButtons();
   });
+
+  // ストレージの変更を監視してキャッシュを更新
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === "local") {
+      if (changes.presets) {
+        cachedPresets = changes.presets.newValue || [];
+      }
+
+      if (changes.activePresetId) {
+        cachedActivePresetId = changes.activePresetId.newValue || "";
+      }
+    }
+  });
 }
 
 function injectStyles() {
