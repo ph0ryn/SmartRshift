@@ -102,7 +102,7 @@ function injectButtons() {
     btn.onclick = (e) => {
       e.stopPropagation();
       e.preventDefault();
-      handleShiftApply(el);
+      void handleShiftApply(el);
     };
 
     el.appendChild(btn);
@@ -114,27 +114,27 @@ function injectButtons() {
     holidayBtn.textContent = "🏖️";
 
     Object.assign(holidayBtn.style, {
-      position: "absolute",
-      top: "28px", // ⚡️ボタンの下
-      right: "2px",
-      zIndex: "9999",
       background: "#e0f7fa",
       border: "1px solid #999",
       borderRadius: "50%",
+      boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
       cursor: "pointer",
       fontSize: "14px",
-      width: "24px",
       height: "24px",
-      padding: "0",
       lineHeight: "22px",
+      padding: "0",
+      position: "absolute",
+      right: "2px",
       textAlign: "center",
-      boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+      top: "28px", // ⚡️ボタンの下
+      width: "24px",
+      zIndex: "9999",
     });
 
     holidayBtn.onclick = (e) => {
       e.stopPropagation();
       e.preventDefault();
-      handleHolidayApply(el);
+      void handleHolidayApply(el);
     };
 
     el.appendChild(holidayBtn);
@@ -172,7 +172,7 @@ function injectDayButtons() {
   colGroups.sort((a, b) => a.left - b.left);
 
   colGroups.forEach((group) => {
-    const topCell = group.elements[0];
+    const [topCell] = group.elements;
     const rect = topCell.getBoundingClientRect();
 
     const pageTop = rect.top + window.scrollY;
@@ -238,7 +238,7 @@ function injectDayButtons() {
         // (再検索してもクラス名は変わらない前提)
         if (el.querySelector(".smartshift-btn")) {
           try {
-            await handleShiftApply(el, true);
+            await handleShiftApply(el);
             count++;
           } catch (e) {
             console.error("Apply failed for cell", e);
@@ -292,7 +292,7 @@ function injectDayButtons() {
       for (const el of targetCells) {
         if (el.querySelector(".smartshift-btn")) {
           try {
-            await handleHolidayApply(el, true);
+            await handleHolidayApply(el);
             count++;
           } catch (e) {
             console.error("Apply failed for cell", e);
@@ -310,8 +310,7 @@ function injectDayButtons() {
 }
 
 // 個別シフト適用（Promise版）
-// 個別シフト適用（Promise版）
-async function handleShiftApply(shiftElement: HTMLElement, isAuto = false): Promise<void> {
+async function handleShiftApply(shiftElement: HTMLElement): Promise<void> {
   return new Promise((resolve, reject) => {
     let preset: any = null;
 
@@ -322,7 +321,7 @@ async function handleShiftApply(shiftElement: HTMLElement, isAuto = false): Prom
 
     // 2. なければ先頭を使う
     if (!preset && cachedPresets && cachedPresets.length > 0) {
-      preset = cachedPresets[0];
+      [preset] = cachedPresets;
     }
 
     // 3. それでもなければデフォルト値
@@ -358,7 +357,7 @@ async function handleShiftApply(shiftElement: HTMLElement, isAuto = false): Prom
   });
 }
 
-async function handleHolidayApply(shiftElement: HTMLElement, isAuto = false): Promise<void> {
+async function handleHolidayApply(shiftElement: HTMLElement): Promise<void> {
   return new Promise((resolve, reject) => {
     const preset = { shiftType: "HOLIDAY" };
     const applyBtn = shiftElement.querySelector(
@@ -388,7 +387,7 @@ function waitForModalAndApply(preset: any, triggerBtn?: HTMLElement): Promise<vo
     if (initialModal && window.getComputedStyle(initialModal).display !== "none") {
       try {
         applyValuesToModal(initialModal as HTMLElement, preset);
-        waitForModalClose(initialModal as HTMLElement, resolve, reject);
+        waitForModalClose(initialModal as HTMLElement, resolve);
 
         return;
       } catch (e) {
@@ -428,7 +427,7 @@ function waitForModalAndApply(preset: any, triggerBtn?: HTMLElement): Promise<vo
 
         try {
           applyValuesToModal(modal as HTMLElement, preset);
-          waitForModalClose(modal as HTMLElement, resolve, reject);
+          waitForModalClose(modal as HTMLElement, resolve);
         } catch (e) {
           reject(e);
         }
@@ -438,8 +437,7 @@ function waitForModalAndApply(preset: any, triggerBtn?: HTMLElement): Promise<vo
 }
 
 // モーダルが閉じるのを待つ
-// モーダルが閉じるのを待つ
-function waitForModalClose(modal: HTMLElement, resolve: () => void, reject: (err: any) => void) {
+function waitForModalClose(modal: HTMLElement, resolve: () => void) {
   let attempts = 0;
   const checkHidden = setInterval(() => {
     attempts++;
