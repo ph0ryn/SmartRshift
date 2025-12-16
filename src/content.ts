@@ -1,5 +1,43 @@
 console.log("SmartShift Content Script Loaded");
 
+// 連続処理のためのキューシステム
+class ExecutionQueue {
+  private queue: (() => Promise<void>)[] = [];
+  private isProcessing = false;
+
+  enqueue(task: () => Promise<void>) {
+    this.queue.push(task);
+    this.process();
+  }
+
+  private async process() {
+    if (this.isProcessing) {
+      return;
+    }
+
+    this.isProcessing = true;
+
+    while (this.queue.length > 0) {
+      const task = this.queue.shift();
+
+      if (task) {
+        try {
+          await task();
+        } catch (e) {
+          console.error("Task failed:", e);
+        }
+
+        // タスク間に少しインターバルを置く（システムの負荷軽減とUI安定化）
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      }
+    }
+
+    this.isProcessing = false;
+  }
+}
+
+const queue = new ExecutionQueue();
+
 // ページ読み込み完了を待機
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", init);
@@ -10,6 +48,7 @@ if (document.readyState === "loading") {
 function init() {
   console.log("SmartShift Initializing...");
   injectButtons();
+  injectDayButtons();
 
   // 動的なDOM変更を監視
   const observer = new MutationObserver((mutations) => {
@@ -24,6 +63,7 @@ function init() {
 
     if (shouldInject) {
       injectButtons();
+      injectDayButtons();
     }
   });
 
@@ -38,13 +78,15 @@ function injectButtons() {
   // console.log(`Found ${shifts.length} shift cells.`); // ログ過多になるのでコメントアウト
 
   shifts.forEach((shift) => {
+    const el = shift as HTMLElement;
+
     // 既にボタンがある場合はスキップ
-    if (shift.querySelector(".smartshift-btn")) {
+    if (el.querySelector(".smartshift-btn")) {
       return;
     }
 
     // 申請ボタンが有効かチェック
-    const applyBtn = shift.querySelector(
+    const applyBtn = el.querySelector(
       'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
     ) as HTMLButtonElement | null;
 
@@ -53,8 +95,8 @@ function injectButtons() {
       return;
     }
 
-    if (window.getComputedStyle(shift).position === "static") {
-      shift.style.position = "relative";
+    if (window.getComputedStyle(el).position === "static") {
+      el.style.position = "relative";
     }
 
     // シフト追加/変更ボタン (⚡️)
@@ -63,32 +105,33 @@ function injectButtons() {
     btn.className = "smartshift-btn";
     btn.textContent = "⚡️";
 
-    btn.style.cssText = `
-      position: absolute;
-      top: 2px;
-      right: 2px;
-      z-index: 9999;
-      background: #ffeb3b;
-      border: 1px solid #999;
-      border-radius: 50%;
-      cursor: pointer;
-      font-size: 14px;
-      width: 24px;
-      height: 24px;
-      padding: 0;
-      line-height: 22px;
-      text-align: center;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-    `;
-
-    // クリックイベントの伝播を止める（親の既存イベントを発火させないため）
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      handleShiftApply(shift);
+    Object.assign(btn.style, {
+      background: "#ffeb3b",
+      border: "1px solid #999",
+      borderRadius: "50%",
+      boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+      cursor: "pointer",
+      fontSize: "14px",
+      height: "24px",
+      lineHeight: "22px",
+      padding: "0",
+      position: "absolute",
+      right: "2px",
+      textAlign: "center",
+      top: "2px",
+      width: "24px",
+      zIndex: "9999",
     });
 
-    shift.appendChild(btn);
+    // クリックイベントの伝播を止める（親の既存イベントを発火させないため）
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      // 単発実行もキュー経由で行うことで安全性を確保
+      queue.enqueue(() => handleShiftApply(el));
+    };
+
+    el.appendChild(btn);
 
     // 希望休ボタン (🏖️)
     const holidayBtn = document.createElement("button");
@@ -96,134 +139,232 @@ function injectButtons() {
     holidayBtn.className = "smartshift-holiday-btn";
     holidayBtn.textContent = "🏖️";
 
-    holidayBtn.style.cssText = `
-      position: absolute;
-      top: 28px; /* ⚡️ボタンの下 */
-      right: 2px;
-      z-index: 9999;
-      background: #e0f7fa;
-      border: 1px solid #999;
-      border-radius: 50%;
-      cursor: pointer;
-      font-size: 14px;
-      width: 24px;
-      height: 24px;
-      padding: 0;
-      line-height: 22px;
-      text-align: center;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-    `;
-
-    holidayBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      handleHolidayApply(shift);
+    Object.assign(holidayBtn.style, {
+      position: "absolute",
+      top: "28px", // ⚡️ボタンの下
+      right: "2px",
+      zIndex: "9999",
+      background: "#e0f7fa",
+      border: "1px solid #999",
+      borderRadius: "50%",
+      cursor: "pointer",
+      fontSize: "14px",
+      width: "24px",
+      height: "24px",
+      padding: "0",
+      lineHeight: "22px",
+      textAlign: "center",
+      boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
     });
 
-    shift.appendChild(holidayBtn);
+    holidayBtn.onclick = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      queue.enqueue(() => handleHolidayApply(el));
+    };
+
+    el.appendChild(holidayBtn);
+  });
+}
+
+// 曜日別一括ボタンの注入
+function injectDayButtons() {
+  // 既に注入済みならスキップ（ラフな判定）
+  if (document.querySelector(".smartshift-day-btn")) {
+    return;
+  }
+
+  // カレンダーの最初の7つのセル（またはヘッダー）を探す
+  // rshiftの構造依存: .staffpage-plan-list-shift がカレンダーセル
+  const cells = Array.from(document.querySelectorAll(".staffpage-plan-list-shift"));
+
+  if (cells.length === 0) {
+    return;
+  }
+
+  // 最初の7つを取得（カレンダーの1行目と仮定）
+  // 注意: rshiftのDOM構造によってはこれが期待通りでない可能性があるため、
+  // X座標がユニークなものを抽出するロジックにするのが安全
+
+  // ここではシンプルに、全てのセルのgetBoundingClientRectを取り、
+  // left座標でグループ化する
+  const colGroups: { left: number; elements: HTMLElement[] }[] = [];
+
+  cells.forEach((cell) => {
+    const rect = cell.getBoundingClientRect();
+    // 誤差吸収のため整数丸め
+    const left = Math.round(rect.left);
+
+    let group = colGroups.find((g) => Math.abs(g.left - left) < 5);
+
+    if (!group) {
+      group = { elements: [], left };
+      colGroups.push(group);
+    }
+
+    group.elements.push(cell as HTMLElement);
+  });
+
+  // 左から順にソート
+  colGroups.sort((a, b) => a.left - b.left);
+
+  // 各カラムの上にボタンを配置
+  colGroups.forEach((group) => {
+    // その列の最初の要素（一番上）
+    // elementsはDOM順なので、Y座標でのソートが必要かもしれないが、通常はDOM順で上から来る
+    const topCell = group.elements[0];
+    const rect = topCell.getBoundingClientRect();
+
+    // 基準点はページ絶対座標
+    const pageTop = rect.top + window.scrollY;
+    const pageLeft = rect.left + window.scrollX;
+
+    const btn = document.createElement("button");
+
+    btn.className = "smartshift-day-btn";
+    btn.textContent = "⬇️";
+    btn.title = "この曜日に一括適用";
+
+    Object.assign(btn.style, {
+      position: "absolute",
+      top: `${pageTop - 35}px`, // セルの35px上
+      left: `${pageLeft + rect.width / 2 - 15}px`, // 中央寄せ
+      zIndex: "10000",
+      width: "30px",
+      height: "30px",
+      borderRadius: "4px",
+      border: "1px solid #ccc",
+      background: "#fff",
+      cursor: "pointer",
+      boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+    });
+
+    btn.onclick = (e) => {
+      e.stopPropagation();
+
+      if (!confirm(`${group.elements.length}件のシフトを一括適用しますか？`)) {
+        return;
+      }
+
+      group.elements.forEach((el) => {
+        // 有効なセル（ボタンが出ているセル = 編集可能）のみ対象
+        if (el.querySelector(".smartshift-btn")) {
+          queue.enqueue(() => handleShiftApply(el));
+        }
+      });
+    };
+
+    document.body.appendChild(btn);
   });
 }
 
 declare const chrome: any;
 
-function handleHolidayApply(shiftElement: Element) {
-  const preset = {
-    shiftType: "HOLIDAY",
-  };
+// 個別シフト適用（Promise版）
+async function handleShiftApply(shiftElement: HTMLElement): Promise<void> {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(["presets", "activePresetId", "shiftPreset"], (items: any) => {
+      let preset: any = null;
 
-  const applyBtn = shiftElement.querySelector(
-    'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
-  );
+      if (items.presets && items.activePresetId) {
+        preset = items.presets.find((p: any) => p.id === items.activePresetId);
+      } else if (items.shiftPreset) {
+        preset = items.shiftPreset;
+      } else {
+        preset = {
+          endHour: "18",
+          endMinute: "00",
+          shiftType: "1",
+          startHour: "09",
+          startMinute: "00",
+        };
+      }
 
-  if (!applyBtn) {
-    console.error("Shift application button not found in cell.");
-    alert("申請ボタンが見つかりませんでした。");
+      if (!preset) {
+        alert("プリセットが見つかりません。Popupから設定を追加して選択してください。");
+        reject(new Error("Preset not found"));
 
-    return;
-  }
+        return;
+      }
 
-  (applyBtn as HTMLElement).click();
-  waitForModalAndApply(preset);
+      const applyBtn = shiftElement.querySelector(
+        'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
+      );
+
+      if (!applyBtn) {
+        // ボタンがない（編集中など）場合はスキップ
+        console.warn("Shift application button not found in cell, skipping.");
+        resolve();
+
+        return;
+      }
+
+      (applyBtn as HTMLElement).click();
+
+      // モーダル操作待機
+      waitForModalAndApply(preset).then(resolve).catch(reject);
+    });
+  });
 }
 
-// シフト適用のメインロジック
-function handleShiftApply(shiftElement: Element) {
-  // Storageからプリセット一覧とアクティブIDを取得
-  chrome.storage.local.get(["presets", "activePresetId", "shiftPreset"], (items: any) => {
-    let preset: any = null;
-
-    // 新データ構造のチェック
-    if (items.presets && items.activePresetId) {
-      preset = items.presets.find((p: any) => p.id === items.activePresetId);
-    }
-    // フォールバック: 旧データまたはデフォルト
-    else if (items.shiftPreset) {
-      preset = items.shiftPreset;
-    }
-    // 完全なデフォルト
-    else {
-      preset = {
-        endHour: "18",
-        endMinute: "00",
-        shiftType: "1",
-        startHour: "09",
-        startMinute: "00",
-      };
-    }
-
-    if (!preset) {
-      alert("プリセットが見つかりません。Popupから設定を追加して選択してください。");
-
-      return;
-    }
-
-    // 1. 既存の申請ボタンを探してクリック
-    // ボタンは shiftElement 内にあるはずだが、構造が変わっている可能性もあるので注意深く探す
-    // 直下の .staffpage-plan-list-shift-day > button ではなく、shift内容を表示しているボタン(id付き)を探す
+async function handleHolidayApply(shiftElement: HTMLElement): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const preset = { shiftType: "HOLIDAY" };
     const applyBtn = shiftElement.querySelector(
       'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
     );
 
     if (!applyBtn) {
-      console.error("Shift application button not found in cell.");
-      alert("申請ボタンが見つかりませんでした。");
+      console.warn("Shift application button not found for holiday, skipping.");
+      resolve();
 
       return;
     }
 
     (applyBtn as HTMLElement).click();
-
-    // 2. モーダルが開くのを待機して値をセット
-    waitForModalAndApply(preset);
+    waitForModalAndApply(preset).then(resolve).catch(reject);
   });
 }
 
-function waitForModalAndApply(preset: any) {
-  const modal = document.getElementById("popup");
+function waitForModalAndApply(preset: any): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const modal = document.getElementById("popup");
 
-  if (!modal) {
-    // まだモーダルDOMがない場合は少し待って再試行
-    setTimeout(() => waitForModalAndApply(preset), 100);
+    if (!modal) {
+      setTimeout(() => waitForModalAndApply(preset).then(resolve).catch(reject), 100);
 
-    return;
-  }
-
-  // モーダルが表示(display: block や opacity, class="in"等)されるのを監視
-  const checkVisible = setInterval(() => {
-    if (modal.style.display !== "none" && modal.classList.contains("in")) {
-      clearInterval(checkVisible);
-      applyValuesToModal(modal, preset);
-    } else {
-      // class 'in' がつかないタイプかもしれないので、display: block だけでもチェック
-      if (window.getComputedStyle(modal).display === "block") {
-        clearInterval(checkVisible);
-        applyValuesToModal(modal, preset);
-      }
+      return;
     }
-  }, 100);
 
-  // 安全策: 5秒経っても開かなければ諦める
-  setTimeout(() => clearInterval(checkVisible), 5000);
+    let attempts = 0;
+    const checkVisible = setInterval(() => {
+      attempts++;
+
+      if (attempts > 50) {
+        // 5秒タイムアウト
+        clearInterval(checkVisible);
+        console.error("Modal open timeout");
+        reject(new Error("Modal open timeout"));
+
+        return;
+      }
+
+      if (
+        (modal.style.display !== "none" && modal.classList.contains("in")) ||
+        window.getComputedStyle(modal).display === "block"
+      ) {
+        clearInterval(checkVisible);
+
+        // 適用処理
+        try {
+          applyValuesToModal(modal, preset);
+          resolve();
+        } catch (e) {
+          reject(e);
+        }
+      }
+    }, 100);
+  });
 }
 
 function applyValuesToModal(modal: HTMLElement, preset: any) {
