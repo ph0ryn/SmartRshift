@@ -1,42 +1,11 @@
 console.log("SmartShift Content Script Loaded");
 
-// 連続処理のためのキューシステム
-class ExecutionQueue {
-  private queue: (() => Promise<void>)[] = [];
-  private isProcessing = false;
+type JobType = "PRESET" | "HOLIDAY";
 
-  enqueue(task: () => Promise<void>) {
-    this.queue.push(task);
-    this.process();
-  }
-
-  private async process() {
-    if (this.isProcessing) {
-      return;
-    }
-
-    this.isProcessing = true;
-
-    while (this.queue.length > 0) {
-      const task = this.queue.shift();
-
-      if (task) {
-        try {
-          await task();
-        } catch (e) {
-          console.error("Task failed:", e);
-        }
-
-        // タスク間に少しインターバルを置く（システムの負荷軽減とUI安定化）
-        await new Promise((resolve) => setTimeout(resolve, 800));
-      }
-    }
-
-    this.isProcessing = false;
-  }
+interface Job {
+  index: number;
+  type: JobType;
 }
-
-const queue = new ExecutionQueue();
 
 // ページ読み込み完了を待機
 if (document.readyState === "loading") {
@@ -50,16 +19,18 @@ function init() {
   injectButtons();
   injectDayButtons();
 
+  // ページロード時にキューに残っているジョブがあれば処理再開
+  processQueue();
+
   // 動的なDOM変更を監視
   const observer = new MutationObserver((mutations) => {
     let shouldInject = false;
 
-    for (const mutation of mutations) {
+    mutations.forEach((mutation) => {
       if (mutation.addedNodes.length > 0) {
         shouldInject = true;
-        break;
       }
-    }
+    });
 
     if (shouldInject) {
       injectButtons();
@@ -73,11 +44,90 @@ function init() {
   });
 }
 
+// ジョブを追加して処理開始（Storage使用）
+function enqueueJobs(jobs: Job[]) {
+  chrome.storage.local.get("jobQueue", (items: any) => {
+    const currentQueue = items.jobQueue || [];
+    const newQueue = currentQueue.concat(jobs);
+
+    chrome.storage.local.set({ jobQueue: newQueue }, () => {
+      processQueue();
+    });
+  });
+}
+
+// キューの処理（永続化対応）
+function processQueue() {
+  chrome.storage.local.get("jobQueue", (items: any) => {
+    const queue: Job[] = items.jobQueue || [];
+
+    if (queue.length === 0) {
+      return;
+    }
+
+    const job = queue[0];
+
+    // 対象要素の特定
+    const shifts = document.querySelectorAll(".staffpage-plan-list-shift");
+    const target = shifts[job.index] as HTMLElement;
+
+    if (!target) {
+      console.warn(`Target shift cell at index ${job.index} not found. Skipping.`);
+      finishJobAndContinue(queue);
+
+      return;
+    }
+
+    // 処理実行
+    executeJob(target, job)
+      .then(() => {
+        // 成功した場合（保存ボタン押下後）
+        // リロード待ちを行い、リロードされなければ次へ
+        finishJobAndContinue(queue);
+      })
+      .catch((err) => {
+        console.error("Job failed:", err);
+        // 失敗したらスキップして次へ
+        finishJobAndContinue(queue);
+      });
+  });
+}
+
+function finishJobAndContinue(currentQueue: Job[]) {
+  // 先頭を削除して保存
+  const nextQueue = currentQueue.slice(1);
+
+  chrome.storage.local.set({ jobQueue: nextQueue }, () => {
+    // まだ残っていれば、リロードされなかった場合に備えて次を実行
+    if (nextQueue.length > 0) {
+      // ページ遷移（リロード）を少し待つ
+      // リロードされれば init() が呼ばれるので、ここのタイマーはキャンセルされる（ページ破棄される）
+      setTimeout(() => {
+        // ページが生きていれば次を実行
+        if (!document.hidden) {
+          processQueue();
+        }
+      }, 1500); // 少し長めに待つ
+    } else {
+      setTimeout(() => {
+        alert("一括処理が完了しました🎉");
+      }, 500);
+    }
+  });
+}
+
+async function executeJob(target: HTMLElement, job: Job): Promise<void> {
+  if (job.type === "PRESET") {
+    return handleShiftApply(target, true); // true = 自動実行モード
+  } else {
+    return handleHolidayApply(target, true);
+  }
+}
+
 function injectButtons() {
   const shifts = document.querySelectorAll(".staffpage-plan-list-shift");
-  // console.log(`Found ${shifts.length} shift cells.`); // ログ過多になるのでコメントアウト
 
-  shifts.forEach((shift) => {
+  shifts.forEach((shift, index) => {
     const el = shift as HTMLElement;
 
     // 既にボタンがある場合はスキップ
@@ -85,19 +135,20 @@ function injectButtons() {
       return;
     }
 
-    // 申請ボタンが有効かチェック
     const applyBtn = el.querySelector(
       'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
     ) as HTMLButtonElement | null;
 
-    // 申請ボタンがない、またはdisabledの場合はスキップ
-    if (!applyBtn || applyBtn.disabled) {
+    if (!applyBtn) {
       return;
     }
 
     if (window.getComputedStyle(el).position === "static") {
       el.style.position = "relative";
     }
+
+    // データ属性でindexを持たせておく
+    el.dataset.smartshiftIndex = index.toString();
 
     // シフト追加/変更ボタン (⚡️)
     const btn = document.createElement("button");
@@ -123,12 +174,10 @@ function injectButtons() {
       zIndex: "9999",
     });
 
-    // クリックイベントの伝播を止める（親の既存イベントを発火させないため）
     btn.onclick = (e) => {
       e.stopPropagation();
       e.preventDefault();
-      // 単発実行もキュー経由で行うことで安全性を確保
-      queue.enqueue(() => handleShiftApply(el));
+      handleShiftApply(el);
     };
 
     el.appendChild(btn);
@@ -160,7 +209,7 @@ function injectButtons() {
     holidayBtn.onclick = (e) => {
       e.stopPropagation();
       e.preventDefault();
-      queue.enqueue(() => handleHolidayApply(el));
+      handleHolidayApply(el);
     };
 
     el.appendChild(holidayBtn);
@@ -169,99 +218,146 @@ function injectButtons() {
 
 // 曜日別一括ボタンの注入
 function injectDayButtons() {
-  // 既に注入済みならスキップ（ラフな判定）
-  if (document.querySelector(".smartshift-day-btn")) {
+  if (document.querySelector(".smartshift-day-btn-group")) {
     return;
   }
 
-  // カレンダーの最初の7つのセル（またはヘッダー）を探す
-  // rshiftの構造依存: .staffpage-plan-list-shift がカレンダーセル
   const cells = Array.from(document.querySelectorAll(".staffpage-plan-list-shift"));
 
   if (cells.length === 0) {
     return;
   }
 
-  // 最初の7つを取得（カレンダーの1行目と仮定）
-  // 注意: rshiftのDOM構造によってはこれが期待通りでない可能性があるため、
-  // X座標がユニークなものを抽出するロジックにするのが安全
+  const colGroups: { left: number; elements: HTMLElement[]; indices: number[] }[] = [];
 
-  // ここではシンプルに、全てのセルのgetBoundingClientRectを取り、
-  // left座標でグループ化する
-  const colGroups: { left: number; elements: HTMLElement[] }[] = [];
-
-  cells.forEach((cell) => {
+  cells.forEach((cell, index) => {
     const rect = cell.getBoundingClientRect();
-    // 誤差吸収のため整数丸め
     const left = Math.round(rect.left);
 
     let group = colGroups.find((g) => Math.abs(g.left - left) < 5);
 
     if (!group) {
-      group = { elements: [], left };
+      group = { elements: [], indices: [], left };
       colGroups.push(group);
     }
 
     group.elements.push(cell as HTMLElement);
+    // 元のNodeList内でのインデックスを保存
+    group.indices.push(index);
   });
 
-  // 左から順にソート
   colGroups.sort((a, b) => a.left - b.left);
 
-  // 各カラムの上にボタンを配置
   colGroups.forEach((group) => {
-    // その列の最初の要素（一番上）
-    // elementsはDOM順なので、Y座標でのソートが必要かもしれないが、通常はDOM順で上から来る
     const topCell = group.elements[0];
     const rect = topCell.getBoundingClientRect();
 
-    // 基準点はページ絶対座標
     const pageTop = rect.top + window.scrollY;
     const pageLeft = rect.left + window.scrollX;
 
-    const btn = document.createElement("button");
+    // ボタンコンテナ
+    const container = document.createElement("div");
 
-    btn.className = "smartshift-day-btn";
-    btn.textContent = "⬇️";
-    btn.title = "この曜日に一括適用";
+    container.className = "smartshift-day-btn-group";
 
-    Object.assign(btn.style, {
+    Object.assign(container.style, {
+      left: `${pageLeft}px`,
       position: "absolute",
-      top: `${pageTop - 35}px`, // セルの35px上
-      left: `${pageLeft + rect.width / 2 - 15}px`, // 中央寄せ
+      textAlign: "center",
+      top: `${pageTop - 40}px`,
+      width: `${rect.width}px`,
       zIndex: "10000",
-      width: "30px",
-      height: "30px",
-      borderRadius: "4px",
-      border: "1px solid #ccc",
-      background: "#fff",
-      cursor: "pointer",
-      boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
     });
 
-    btn.onclick = (e) => {
+    // 一括適用ボタン (⚡️)
+    const btnPreset = document.createElement("button");
+
+    btnPreset.textContent = "⚡️";
+    btnPreset.title = "この曜日に一括適用";
+
+    Object.assign(btnPreset.style, {
+      background: "#ffeb3b",
+      border: "1px solid #ccc",
+      borderRadius: "4px",
+      cursor: "pointer",
+      fontSize: "12px",
+      height: "24px",
+      marginRight: "4px",
+      padding: 0,
+      width: "24px",
+    });
+
+    btnPreset.onclick = (e) => {
       e.stopPropagation();
 
-      if (!confirm(`${group.elements.length}件のシフトを一括適用しますか？`)) {
+      if (
+        !confirm(
+          `【出勤】\n${group.elements.length}件のシフトを一括適用しますか？\n※ページのリロードを伴います`,
+        )
+      ) {
         return;
       }
 
-      group.elements.forEach((el) => {
-        // 有効なセル（ボタンが出ているセル = 編集可能）のみ対象
+      const jobs: Job[] = [];
+
+      group.elements.forEach((el, i) => {
+        // ⚡️ボタンがあるセルのみを対象とする
         if (el.querySelector(".smartshift-btn")) {
-          queue.enqueue(() => handleShiftApply(el));
+          jobs.push({ index: group.indices[i], type: "PRESET" });
         }
       });
+
+      enqueueJobs(jobs);
     };
 
-    document.body.appendChild(btn);
+    // 希望休一括ボタン (🏖️)
+    const btnHoliday = document.createElement("button");
+
+    btnHoliday.textContent = "🏖️";
+    btnHoliday.title = "この曜日を全て希望休に";
+
+    Object.assign(btnHoliday.style, {
+      background: "#e0f7fa",
+      border: "1px solid #ccc",
+      borderRadius: "4px",
+      cursor: "pointer",
+      fontSize: "12px",
+      height: "24px",
+      padding: 0,
+      width: "24px",
+    });
+
+    btnHoliday.onclick = (e) => {
+      e.stopPropagation();
+
+      if (
+        !confirm(
+          `【希望休】\n${group.elements.length}件を一括申請しますか？\n※ページのリロードを伴います`,
+        )
+      ) {
+        return;
+      }
+
+      const jobs: Job[] = [];
+
+      group.elements.forEach((el, i) => {
+        // ⚡️ボタンがあるセルのみを対象とする
+        if (el.querySelector(".smartshift-btn")) {
+          jobs.push({ index: group.indices[i], type: "HOLIDAY" });
+        }
+      });
+
+      enqueueJobs(jobs);
+    };
+
+    container.appendChild(btnPreset);
+    container.appendChild(btnHoliday);
+    document.body.appendChild(container);
   });
 }
 
-declare const chrome: any;
-
 // 個別シフト適用（Promise版）
-async function handleShiftApply(shiftElement: HTMLElement): Promise<void> {
+async function handleShiftApply(shiftElement: HTMLElement, isAuto = false): Promise<void> {
   return new Promise((resolve, reject) => {
     chrome.storage.local.get(["presets", "activePresetId", "shiftPreset"], (items: any) => {
       let preset: any = null;
@@ -280,13 +376,6 @@ async function handleShiftApply(shiftElement: HTMLElement): Promise<void> {
         };
       }
 
-      if (!preset) {
-        alert("プリセットが見つかりません。Popupから設定を追加して選択してください。");
-        reject(new Error("Preset not found"));
-
-        return;
-      }
-
       const applyBtn = shiftElement.querySelector(
         'button[id^="shift_shinsei"], button[onclick*="fnShiftShinsei"]',
       );
@@ -294,7 +383,14 @@ async function handleShiftApply(shiftElement: HTMLElement): Promise<void> {
       if (!applyBtn) {
         // ボタンがない（編集中など）場合はスキップ
         console.warn("Shift application button not found in cell, skipping.");
-        resolve();
+        resolve(); // エラーにはしない
+
+        return;
+      }
+
+      if (!preset && !isAuto) {
+        alert("プリセットが見つかりません。Popupから設定を追加して選択してください。");
+        reject(new Error("No preset"));
 
         return;
       }
@@ -307,7 +403,7 @@ async function handleShiftApply(shiftElement: HTMLElement): Promise<void> {
   });
 }
 
-async function handleHolidayApply(shiftElement: HTMLElement): Promise<void> {
+async function handleHolidayApply(shiftElement: HTMLElement, isAuto = false): Promise<void> {
   return new Promise((resolve, reject) => {
     const preset = { shiftType: "HOLIDAY" };
     const applyBtn = shiftElement.querySelector(
@@ -331,6 +427,7 @@ function waitForModalAndApply(preset: any): Promise<void> {
     const modal = document.getElementById("popup");
 
     if (!modal) {
+      // まだDOMにない場合
       setTimeout(() => waitForModalAndApply(preset).then(resolve).catch(reject), 100);
 
       return;
@@ -426,9 +523,15 @@ function applyValuesToModal(modal: HTMLElement, preset: any) {
     if (!found) {
       console.error("Holiday element not found.");
 
-      alert(
-        `「希望休」などの項目が自動検出できませんでした。\n検証キーワード: ${keywords.join(", ")}`,
-      );
+      // 自動実行中はアラートを出さないほうが良いかもしれないが、エラーログは出す
+      if (document.hidden) {
+        // 簡易判定: バックグラウンド実行ならアラート出さない
+        console.error("Failed to find holiday option in background");
+      } else {
+        alert(
+          `「希望休」などの項目が自動検出できませんでした。\n検証キーワード: ${keywords.join(", ")}`,
+        );
+      }
 
       return;
     }
@@ -440,7 +543,6 @@ function applyValuesToModal(modal: HTMLElement, preset: any) {
     setSelect("popup_to_minutes", preset.endMinute);
 
     // シフトタイプ（現状は "1" = 出勤 固定）
-    // もしラジオボタンなら
     const typeRadio = modal.querySelector(
       `input[name="popup_shift_type"][value="${preset.shiftType}"]`,
     ) as HTMLInputElement;
@@ -451,7 +553,8 @@ function applyValuesToModal(modal: HTMLElement, preset: any) {
     }
   }
 
-  // 少し待ってから登録(変更)ボタンを押す(React/Vueなどイベント伝播待ち考慮)
+  // 「一瞬で消える」対策：入力をユーザーが視認できるように、かつイベントの伝搬を確実にするため
+  // 少し待ってから登録ボタンを押す
   setTimeout(() => {
     const submitBtn = modal.querySelector("#pupup_change") as HTMLElement;
 
@@ -460,5 +563,5 @@ function applyValuesToModal(modal: HTMLElement, preset: any) {
     } else {
       console.error("Submit button not found");
     }
-  }, 100);
+  }, 500); // 500msのウェイト（前は100ms）
 }
