@@ -4,55 +4,73 @@
 
 import { handleHolidayApply } from "./holidayButton";
 import { handleShiftApply } from "./shiftButton";
-import {
-  COLUMN_GROUP_TOLERANCE,
-  COLUMN_MATCH_TOLERANCE,
-  CSS_CLASSES,
-  ICONS,
-  SELECTORS,
-} from "../../constants";
+import { CSS_CLASSES, ICONS, SELECTORS } from "../../constants";
 
 import type { ColumnGroup } from "../../types";
 
 /**
- * Group cells by their horizontal position (column)
+ * Get day of week from cell (0-6)
+ */
+function getDayOfWeek(cell: HTMLElement): number | null {
+  const btn = cell.querySelector(SELECTORS.APPLY_BUTTON) as HTMLButtonElement | null;
+
+  if (!btn?.id) {
+    return null;
+  }
+
+  // "shift_shinsei" = 13 characters
+  const day = parseInt(btn.id.slice(13), 10);
+
+  return Number.isNaN(day) ? null : day % 7;
+}
+
+/**
+ * Group cells by day of week
  */
 function groupCellsByColumn(cells: HTMLElement[]): ColumnGroup[] {
   const groups: ColumnGroup[] = [];
 
   cells.forEach((cell) => {
-    const rect = cell.getBoundingClientRect();
-    const left = Math.round(rect.left);
+    const dayOfWeek = getDayOfWeek(cell);
 
-    // Find existing group with similar left position
-    let group = groups.find((g) => Math.abs(g.left - left) < COLUMN_GROUP_TOLERANCE);
+    if (dayOfWeek === null) {
+      return;
+    }
+
+    // Find existing group with same day of week
+    let group = groups.find((g) => g.left === dayOfWeek);
 
     if (!group) {
-      group = { elements: [], left };
+      group = { elements: [], left: dayOfWeek };
       groups.push(group);
     }
 
     group.elements.push(cell);
   });
 
-  // Sort groups by left position
+  // Sort groups by day of week
   groups.sort((a, b) => a.left - b.left);
 
   return groups;
 }
 
 /**
- * Get cells in the same column at click time (fresh query to avoid stale elements)
+ * Get cells with the same day of week
  */
-function getCellsInColumn(columnLeft: number): HTMLElement[] {
+function getCellsInColumn(targetDayOfWeek: number): HTMLElement[] {
   const currentCells = Array.from(document.querySelectorAll(SELECTORS.SHIFT_CELL)) as HTMLElement[];
 
   return currentCells.filter((cell) => {
-    const rect = cell.getBoundingClientRect();
-    const applyBtn = cell.querySelector(SELECTORS.APPLY_BUTTON) as HTMLButtonElement | null;
-    const isEnabled = applyBtn && !applyBtn.disabled;
+    const dayOfWeek = getDayOfWeek(cell);
 
-    return isEnabled && Math.abs(Math.round(rect.left) - columnLeft) < COLUMN_MATCH_TOLERANCE;
+    if (dayOfWeek === null) {
+      return false;
+    }
+
+    const applyBtn = cell.querySelector(SELECTORS.APPLY_BUTTON) as HTMLButtonElement | null;
+    const isEnabled = applyBtn && !applyBtn.classList.contains("opacity");
+
+    return isEnabled && dayOfWeek === targetDayOfWeek;
   });
 }
 
@@ -66,7 +84,7 @@ function sortByVerticalPosition(cells: HTMLElement[]): HTMLElement[] {
 /**
  * Create preset apply button for day column
  */
-function createPresetDayButton(columnLeft: number): HTMLButtonElement {
+function createPresetDayButton(dayOfWeek: number): HTMLButtonElement {
   const btn = document.createElement("button");
 
   btn.className = `${CSS_CLASSES.DAY_BTN} ${CSS_CLASSES.DAY_BTN_PRESET}`;
@@ -77,21 +95,22 @@ function createPresetDayButton(columnLeft: number): HTMLButtonElement {
     e.stopPropagation();
     e.preventDefault();
 
-    const targetCells = sortByVerticalPosition(getCellsInColumn(columnLeft));
-    let count = 0;
+    const cells = getCellsInColumn(dayOfWeek);
+    const targetCells = sortByVerticalPosition(cells);
+    // let count = 0;
 
     for (const el of targetCells) {
       if (el.querySelector(`.${CSS_CLASSES.SHIFT_BTN}`)) {
         try {
           await handleShiftApply(el);
-          count++;
+          // count++;
         } catch (err) {
           console.error("Apply failed for cell", err);
         }
       }
     }
 
-    alert(`${count}件の処理が完了しました`);
+    // alert(`${count}件の処理が完了しました`);
   };
 
   return btn;
@@ -100,7 +119,7 @@ function createPresetDayButton(columnLeft: number): HTMLButtonElement {
 /**
  * Create holiday apply button for day column
  */
-function createHolidayDayButton(columnLeft: number): HTMLButtonElement {
+function createHolidayDayButton(dayOfWeek: number): HTMLButtonElement {
   const btn = document.createElement("button");
 
   btn.className = `${CSS_CLASSES.DAY_BTN} ${CSS_CLASSES.DAY_BTN_HOLIDAY}`;
@@ -111,21 +130,21 @@ function createHolidayDayButton(columnLeft: number): HTMLButtonElement {
     e.stopPropagation();
     e.preventDefault();
 
-    const targetCells = sortByVerticalPosition(getCellsInColumn(columnLeft));
-    let count = 0;
+    const targetCells = sortByVerticalPosition(getCellsInColumn(dayOfWeek));
+    // let count = 0;
 
     for (const el of targetCells) {
       if (el.querySelector(`.${CSS_CLASSES.SHIFT_BTN}`)) {
         try {
           await handleHolidayApply(el);
-          count++;
+          // count++;
         } catch (err) {
           console.error("Apply failed for cell", err);
         }
       }
     }
 
-    alert(`${count}件の処理が完了しました`);
+    // alert(`${count}件の処理が完了しました`);
   };
 
   return btn;
@@ -143,6 +162,8 @@ export function injectDayButtons(): void {
   const cells = Array.from(document.querySelectorAll(SELECTORS.SHIFT_CELL)) as HTMLElement[];
 
   if (cells.length === 0) {
+    console.error("No cells found");
+
     return;
   }
 

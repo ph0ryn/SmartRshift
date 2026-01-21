@@ -69,7 +69,7 @@ export interface ModalApplyOptions {
  * Column group for day buttons
  */
 export interface ColumnGroup {
-  /** Left position in pixels */
+  /** Day of week (0-6) */
   left: number;
   /** Elements in this column */
   elements: HTMLElement[];
